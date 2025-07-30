@@ -29,6 +29,7 @@ dependencies = [
     "pypdf2>=3.0.0",
     "click>=8.1.0",
     "python-dotenv>=1.0.0",
+    "pillow-heif>=0.18.0",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,8 @@ dependencies = [
 macos = ["pyobjc-framework-Cocoa>=9.0"]
 windows = []  # Pillow already includes Windows clipboard support
 linux = []  # Uses system tools (xclip or wl-paste)
+# HEIC/HEIF image support
+heic = ["pillow-heif>=0.13.0"]
 
 [project.scripts]
 ai-recipes = "src.cli:cli"

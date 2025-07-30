@@ -21,6 +21,9 @@ class LLMClient:
 
         system_prompt = """You are a recipe extraction assistant. Your task is to extract recipe information from the provided content and format it according to the given schema.
 
+IMPORTANT: If the image or content does not contain a recipe (e.g., it's a photo of a person, landscape, or non-food item), respond with:
+{"error": "No recipe found in the provided content"}
+
 Extract the following information:
 - Name: The recipe title
 - Description: The EXACT description text as it appears in the source, typically found after the title and before ingredients. Copy this verbatim - do not paraphrase or summarize.
@@ -59,15 +62,28 @@ Be thorough and accurate. If information is missing, use null for optional field
         )
 
         try:
-            recipe_data = json.loads(response.choices[0].message.content)
+            # Check if response content exists
+            if not response.choices or not response.choices[0].message.content:
+                raise ValueError("LLM returned empty response")
+            
+            content = response.choices[0].message.content
+            recipe_data = json.loads(content)
+            
+            # Check if LLM detected no recipe
+            if "error" in recipe_data:
+                raise ValueError(recipe_data["error"])
 
             # Add source if provided
             if source and not recipe_data.get("source"):
                 recipe_data["source"] = source
 
             return Recipe(**recipe_data)
-        except (json.JSONDecodeError, ValueError) as e:
-            raise ValueError(f"Failed to parse LLM response: {str(e)}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
+        except ValueError as e:
+            if "LLM returned empty response" in str(e):
+                raise
+            raise ValueError(f"Failed to create recipe from LLM response: {str(e)}")
 
     def extract_recipes_batch(self, contents: List[Union[str, List[Dict[str, Any]]]], sources: List[str] = None) -> List[Recipe]:
         """Extract multiple recipes from a batch of contents."""
