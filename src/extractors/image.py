@@ -1,28 +1,29 @@
 import base64
-from pathlib import Path
-from typing import List, Dict, Any
-from PIL import Image
 import io
+from pathlib import Path
+from typing import Any, Dict, List
+
+from PIL import Image
 
 
 class ImageExtractor:
     """Extract recipe content from images."""
-    
+
     SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
-    
+
     def __init__(self, max_size: tuple = (1024, 1024)):
         self.max_size = max_size
-    
+
     def process_image(self, image_path: str) -> List[Dict[str, Any]]:
         """Process a single image and return content for LLM."""
         path = Path(image_path)
-        
+
         if not path.exists():
             raise FileNotFoundError(f"Image file not found: {image_path}")
-        
+
         if path.suffix.lower() not in self.SUPPORTED_FORMATS:
             raise ValueError(f"Unsupported image format: {path.suffix}")
-        
+
         # Open and resize image if needed
         with Image.open(image_path) as img:
             # Convert RGBA to RGB if necessary
@@ -32,16 +33,16 @@ class ImageExtractor:
                 img = background
             elif img.mode not in ('RGB', 'L'):
                 img = img.convert('RGB')
-            
+
             # Resize if larger than max size
             if img.size[0] > self.max_size[0] or img.size[1] > self.max_size[1]:
                 img.thumbnail(self.max_size, Image.Resampling.LANCZOS)
-            
+
             # Convert to base64
             buffer = io.BytesIO()
             img.save(buffer, format='JPEG', quality=85)
             base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        
+
         return [
             {
                 "type": "text",
@@ -54,7 +55,7 @@ class ImageExtractor:
                 }
             }
         ]
-    
+
     def process_multiple_images(self, image_paths: List[str]) -> List[Dict[str, Any]]:
         """Process multiple images and return combined content for LLM."""
         content = [
@@ -63,7 +64,7 @@ class ImageExtractor:
                 "text": "Please extract the complete recipe from these images. If the recipe spans multiple images, combine all the information:"
             }
         ]
-        
+
         for image_path in image_paths:
             try:
                 # Process each image and add to content
@@ -73,8 +74,8 @@ class ImageExtractor:
             except Exception as e:
                 print(f"Warning: Failed to process image {image_path}: {str(e)}")
                 continue
-        
+
         if len(content) == 1:
             raise ValueError("No valid images could be processed")
-        
+
         return content

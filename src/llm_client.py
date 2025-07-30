@@ -1,7 +1,9 @@
-import os
 import json
-from typing import List, Union, Dict, Any
+import os
+from typing import Any, Dict, List, Union
+
 from openai import OpenAI
+
 from .models import Recipe
 
 
@@ -10,13 +12,13 @@ class LLMClient:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ValueError("OpenAI API key must be provided or set in OPENAI_API_KEY environment variable")
-        
+
         self.client = OpenAI(api_key=self.api_key)
         self.model = model
-        
+
     def extract_recipe(self, content: Union[str, List[Dict[str, Any]]], source: str = None) -> Recipe:
         """Extract recipe from content using LLM."""
-        
+
         system_prompt = """You are a recipe extraction assistant. Your task is to extract recipe information from the provided content and format it according to the given schema.
 
 Extract the following information:
@@ -36,7 +38,7 @@ Be thorough and accurate. If information is missing, use null for optional field
         messages = [
             {"role": "system", "content": system_prompt}
         ]
-        
+
         if isinstance(content, str):
             # Text content
             user_message = {"role": "user", "content": content}
@@ -46,32 +48,32 @@ Be thorough and accurate. If information is missing, use null for optional field
                 "role": "user",
                 "content": content
             }
-        
+
         messages.append(user_message)
-        
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             temperature=0.3,
             response_format={"type": "json_object"}
         )
-        
+
         try:
             recipe_data = json.loads(response.choices[0].message.content)
-            
+
             # Add source if provided
             if source and not recipe_data.get("source"):
                 recipe_data["source"] = source
-                
+
             return Recipe(**recipe_data)
         except (json.JSONDecodeError, ValueError) as e:
             raise ValueError(f"Failed to parse LLM response: {str(e)}")
-    
+
     def extract_recipes_batch(self, contents: List[Union[str, List[Dict[str, Any]]]], sources: List[str] = None) -> List[Recipe]:
         """Extract multiple recipes from a batch of contents."""
         recipes = []
         sources = sources or [None] * len(contents)
-        
+
         for content, source in zip(contents, sources):
             try:
                 recipe = self.extract_recipe(content, source)
@@ -79,5 +81,5 @@ Be thorough and accurate. If information is missing, use null for optional field
             except Exception as e:
                 print(f"Failed to extract recipe: {str(e)}")
                 continue
-                
+
         return recipes
