@@ -7,16 +7,17 @@ from pydantic import BaseModel, Field, field_validator
 
 class Amount(BaseModel):
     """Represents the amount/quantity for an ingredient."""
+
     quantity: str | None = Field(
         default=None,
-        description="The numeric quantity (e.g., '1', '2.5', '1/2', '1-2')"
+        description="The numeric quantity (e.g., '1', '2.5', '1/2', '1-2')",
     )
     unit: str | None = Field(
         default=None,
-        description="The unit of measurement (e.g., 'cup', 'tablespoon', 'pound')"
+        description="The unit of measurement (e.g., 'cup', 'tablespoon', 'pound')",
     )
 
-    @field_validator('quantity', mode='before')
+    @field_validator("quantity", mode="before")
     @classmethod
     def convert_amount_fractions(cls, v: str | None) -> str | None:
         """Convert Unicode fractions in quantities to readable format."""
@@ -25,25 +26,26 @@ class Amount(BaseModel):
 
 class Item(BaseModel):
     """Represents the ingredient item with name and modifiers."""
+
     name: str = Field(
         description="The main ingredient name (e.g., 'flour', 'butter', 'eggs', 'salt', 'cumin')"
     )
     modifiers: list[str] | None = Field(
         default=None,
-        description="List of modifiers/specifications (e.g., ['all-purpose'], ['unsalted', 'softened'], ['kosher'], ['ground'])"
+        description="List of modifiers/specifications (e.g., ['all-purpose'], ['unsalted', 'softened'], ['kosher'], ['ground'])",
     )
     alternative: Item | None = Field(
         default=None,
-        description="Alternative ingredient that can be substituted (e.g., 'serrano peppers' instead of 'jalapeños')"
+        description="Alternative ingredient that can be substituted (e.g., 'serrano peppers' instead of 'jalapeños')",
     )
 
-    @field_validator('name', mode='before')
+    @field_validator("name", mode="before")
     @classmethod
     def convert_name_fractions(cls, v: str) -> str:
         """Convert Unicode fractions in names to readable format."""
         return convert_unicode_fractions(v) if v else v
 
-    @field_validator('modifiers', mode='before')
+    @field_validator("modifiers", mode="before")
     @classmethod
     def convert_modifiers_fractions(cls, v: list[str] | None) -> list[str] | None:
         """Convert Unicode fractions in modifiers to readable format."""
@@ -55,9 +57,9 @@ class Item(BaseModel):
         """Convert item to human-readable string."""
         parts = []
         if self.modifiers:
-            parts.append(', '.join(self.modifiers))
+            parts.append(", ".join(self.modifiers))
         parts.append(self.name)
-        result = ' '.join(parts)
+        result = " ".join(parts)
 
         if self.alternative:
             result += f" (or {self.alternative.to_string()})"
@@ -65,17 +67,13 @@ class Item(BaseModel):
         return result
 
 
-
-
 class Ingredient(BaseModel):
     """Represents a single ingredient with amount and item details."""
+
     amount: Amount | None = Field(
-        default=None,
-        description="The amount/quantity of the ingredient"
+        default=None, description="The amount/quantity of the ingredient"
     )
-    item: Item = Field(
-        description="The ingredient item with name and modifiers"
-    )
+    item: Item = Field(description="The ingredient item with name and modifiers")
 
     def to_string(self) -> str:
         """Convert ingredient to human-readable string."""
@@ -164,7 +162,9 @@ class Recipe(BaseModel):
 
     @field_validator("ingredients", mode="before")
     @classmethod
-    def parse_ingredients(cls, v: list[str] | list[dict] | list[Ingredient]) -> list[Ingredient]:
+    def parse_ingredients(
+        cls, v: list[str] | list[dict] | list[Ingredient]
+    ) -> list[Ingredient]:
         """Parse ingredients from various input formats."""
         if not isinstance(v, list):
             return v
@@ -187,22 +187,43 @@ class Recipe(BaseModel):
                 remaining = item
 
                 # Pattern: "1 1/2 cups" or "2 tablespoons" or "1/2 teaspoon"
-                quantity_pattern = r'^([0-9]+(?:\s+[0-9]+/[0-9]+)?|[0-9]+/[0-9]+|[0-9]+(?:\.[0-9]+)?|[0-9]+-[0-9]+)\s+'
+                quantity_pattern = r"^([0-9]+(?:\s+[0-9]+/[0-9]+)?|[0-9]+/[0-9]+|[0-9]+(?:\.[0-9]+)?|[0-9]+-[0-9]+)\s+"
                 match = re.match(quantity_pattern, item)
 
                 if match:
                     quantity = match.group(1)
-                    remaining = item[match.end():]
+                    remaining = item[match.end() :]
 
                     # Try to extract unit
-                    unit_words = ['cup', 'cups', 'tablespoon', 'tablespoons', 'teaspoon', 'teaspoons',
-                                  'pound', 'pounds', 'ounce', 'ounces', 'stick', 'sticks', 'can', 'cans',
-                                  'package', 'packages', 'clove', 'cloves', 'inch', 'inches', 'piece', 'pieces']
+                    unit_words = [
+                        "cup",
+                        "cups",
+                        "tablespoon",
+                        "tablespoons",
+                        "teaspoon",
+                        "teaspoons",
+                        "pound",
+                        "pounds",
+                        "ounce",
+                        "ounces",
+                        "stick",
+                        "sticks",
+                        "can",
+                        "cans",
+                        "package",
+                        "packages",
+                        "clove",
+                        "cloves",
+                        "inch",
+                        "inches",
+                        "piece",
+                        "pieces",
+                    ]
                     unit_found = False
                     for unit in unit_words:
                         if remaining.lower().startswith(unit):
                             amount = Amount(quantity=quantity, unit=unit)
-                            remaining = remaining[len(unit):].strip()
+                            remaining = remaining[len(unit) :].strip()
                             unit_found = True
                             break
 
@@ -215,10 +236,7 @@ class Recipe(BaseModel):
                 # In future, we could parse modifiers more intelligently
                 item_obj = Item(name=remaining, modifiers=None)
 
-                result.append(Ingredient(
-                    amount=amount,
-                    item=item_obj
-                ))
+                result.append(Ingredient(amount=amount, item=item_obj))
         return result
 
     @field_validator("directions", mode="before")
