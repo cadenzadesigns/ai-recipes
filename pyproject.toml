@@ -30,6 +30,8 @@ dependencies = [
     "click>=8.1.0",
     "python-dotenv>=1.0.0",
     "pillow-heif>=0.18.0",
+    "opencv-python>=4.11.0.86",
+    "numpy>=1.24.4",
 ]
 
 [project.optional-dependencies]
@@ -90,5 +92,6 @@ python_functions = "test_*"
 
 [dependency-groups]
 dev = [
+    "black>=24.8.0",
     "ruff>=0.12.7",
 ]

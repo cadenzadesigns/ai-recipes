@@ -9,7 +9,16 @@ from PIL import Image
 class ImageExtractor:
     """Extract recipe content from images."""
 
-    SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.heif'}
+    SUPPORTED_FORMATS = {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".bmp",
+        ".webp",
+        ".heic",
+        ".heif",
+    }
 
     def __init__(self, max_size: tuple = (1024, 1024)):
         self.max_size = max_size
@@ -27,9 +36,10 @@ class ImageExtractor:
         # Open and resize image if needed
         try:
             # For HEIC images, we might need pillow-heif
-            if path.suffix.lower() in {'.heic', '.heif'}:
+            if path.suffix.lower() in {".heic", ".heif"}:
                 try:
                     from pillow_heif import register_heif_opener
+
                     register_heif_opener()
                 except ImportError:
                     raise ValueError(
@@ -38,12 +48,14 @@ class ImageExtractor:
 
             img = Image.open(image_path)
             # Convert RGBA to RGB if necessary
-            if img.mode in ('RGBA', 'LA'):
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+            if img.mode in ("RGBA", "LA"):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                background.paste(
+                    img, mask=img.split()[-1] if img.mode == "RGBA" else None
+                )
                 img = background
-            elif img.mode not in ('RGB', 'L'):
-                img = img.convert('RGB')
+            elif img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
 
             # Resize if larger than max size
             if img.size[0] > self.max_size[0] or img.size[1] > self.max_size[1]:
@@ -51,23 +63,18 @@ class ImageExtractor:
 
             # Convert to base64
             buffer = io.BytesIO()
-            img.save(buffer, format='JPEG', quality=85)
-            base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            img.save(buffer, format="JPEG", quality=85)
+            base64_image = base64.b64encode(buffer.getvalue()).decode("utf-8")
         finally:
-            if 'img' in locals():
+            if "img" in locals():
                 img.close()
 
         return [
-            {
-                "type": "text",
-                "text": "Please extract the recipe from this image:"
-            },
+            {"type": "text", "text": "Please extract the recipe from this image:"},
             {
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}"
-                }
-            }
+                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+            },
         ]
 
     def process_multiple_images(self, image_paths: List[str]) -> List[Dict[str, Any]]:
@@ -75,7 +82,7 @@ class ImageExtractor:
         content = [
             {
                 "type": "text",
-                "text": "Please extract the complete recipe from these images. If the recipe spans multiple images, combine all the information:"
+                "text": "Please extract the complete recipe from these images. If the recipe spans multiple images, combine all the information:",
             }
         ]
 

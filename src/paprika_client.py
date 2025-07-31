@@ -47,32 +47,33 @@ class PaprikaClient:
     def _authenticate(self) -> str:
         """Authenticate with v2 API and get token."""
         headers = {
-            'User-Agent': 'Paprika Recipe Manager/3.0 (Macintosh; macOS 14.0)',
-            'X-Paprika-Client': 'macOS',
-            'X-Paprika-Version': '3.0',
+            "User-Agent": "Paprika Recipe Manager/3.0 (Macintosh; macOS 14.0)",
+            "X-Paprika-Client": "macOS",
+            "X-Paprika-Version": "3.0",
         }
 
-        form_data = {
-            'email': self.email,
-            'password': self.password
-        }
+        form_data = {"email": self.email, "password": self.password}
 
         response = requests.post(self.LOGIN_URL, data=form_data, headers=headers)
 
         if response.status_code != 200:
-            raise ValueError(f"Failed to authenticate: {response.status_code} - {response.text}")
+            raise ValueError(
+                f"Failed to authenticate: {response.status_code} - {response.text}"
+            )
 
         data = response.json()
-        if 'error' in data:
+        if "error" in data:
             raise ValueError(f"Authentication error: {data['error']['message']}")
 
-        return data['result']['token']
+        return data["result"]["token"]
 
-    def _make_request(self, method: str, endpoint: str, data: Dict = None) -> requests.Response:
+    def _make_request(
+        self, method: str, endpoint: str, data: Dict = None
+    ) -> requests.Response:
         """Make authenticated request to Paprika API."""
         headers = {
             "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         url = f"{self.BASE_URL}/{endpoint}"
@@ -128,10 +129,14 @@ class PaprikaClient:
         paprika_recipe["hash"] = recipe_hash
 
         # Upload via v2 API
-        response = self._make_request("POST", f"sync/recipe/{recipe_uid}/", paprika_recipe)
+        response = self._make_request(
+            "POST", f"sync/recipe/{recipe_uid}/", paprika_recipe
+        )
 
         if response.status_code not in (200, 201):
-            raise ValueError(f"Failed to upload recipe: {response.status_code} - {response.text}")
+            raise ValueError(
+                f"Failed to upload recipe: {response.status_code} - {response.text}"
+            )
 
         try:
             return response.json()
@@ -144,7 +149,9 @@ class PaprikaClient:
         response = self._make_request("GET", "sync/recipes/")
 
         if response.status_code != 200:
-            raise ValueError(f"Failed to get recipes: {response.status_code} - {response.text}")
+            raise ValueError(
+                f"Failed to get recipes: {response.status_code} - {response.text}"
+            )
 
         data = response.json()
         # v1 API returns {"result": [{"uid": "...", "hash": "..."}, ...]}

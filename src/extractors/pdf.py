@@ -10,18 +10,20 @@ class PDFExtractor:
     def __init__(self):
         pass
 
-    def extract_from_pdf(self, pdf_path: str, page_numbers: Optional[list] = None) -> str:
+    def extract_from_pdf(
+        self, pdf_path: str, page_numbers: Optional[list] = None
+    ) -> str:
         """Extract text content from a PDF file."""
         path = Path(pdf_path)
 
         if not path.exists():
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
-        if path.suffix.lower() != '.pdf':
+        if path.suffix.lower() != ".pdf":
             raise ValueError(f"File is not a PDF: {pdf_path}")
 
         try:
-            with open(pdf_path, 'rb') as file:
+            with open(pdf_path, "rb") as file:
                 reader = PyPDF2.PdfReader(file)
 
                 # Determine which pages to extract
@@ -37,7 +39,9 @@ class PDFExtractor:
                         page = reader.pages[page_num]
                         text = page.extract_text()
                         if text.strip():
-                            extracted_text.append(f"--- Page {page_num + 1} ---\n{text}")
+                            extracted_text.append(
+                                f"--- Page {page_num + 1} ---\n{text}"
+                            )
                     else:
                         print(f"Warning: Page {page_num + 1} does not exist in the PDF")
 
@@ -51,7 +55,9 @@ class PDFExtractor:
         except Exception as e:
             raise ValueError(f"Failed to extract text from PDF: {str(e)}")
 
-    def extract_from_pdf_with_ocr(self, pdf_path: str, page_numbers: Optional[list] = None) -> str:
+    def extract_from_pdf_with_ocr(
+        self, pdf_path: str, page_numbers: Optional[list] = None
+    ) -> str:
         """Extract text from PDF using OCR for scanned documents.
 
         This is a placeholder for OCR functionality. To implement:

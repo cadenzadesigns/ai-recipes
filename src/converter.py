@@ -12,7 +12,7 @@ class RecipeConverter:
     @staticmethod
     def txt_to_recipe(txt_content: str) -> Recipe:
         """Parse a text file and convert it to a Recipe object."""
-        lines = txt_content.strip().split('\n')
+        lines = txt_content.strip().split("\n")
 
         # Initialize recipe data
         recipe_data = {
@@ -23,7 +23,7 @@ class RecipeConverter:
             "ingredients": [],
             "directions": [],
             "notes": [],
-            "source": None
+            "source": None,
         }
 
         current_section = None
@@ -38,7 +38,7 @@ class RecipeConverter:
                 continue
 
             # Extract recipe name (first non-empty line)
-            if not recipe_data["name"] and not line.startswith('['):
+            if not recipe_data["name"] and not line.startswith("["):
                 recipe_data["name"] = line
                 i += 1
                 continue
@@ -77,14 +77,14 @@ class RecipeConverter:
             # Process content based on current section
             if current_section == "description":
                 # Description is usually a single paragraph
-                if line and not line.endswith(':'):
+                if line and not line.endswith(":"):
                     recipe_data["description"] = line
                     current_section = None
 
             elif current_section == "ingredients":
                 # Ingredients start with bullet or dash
-                if line.startswith(('•', '-', '*', '·')):
-                    ingredient = re.sub(r'^[•\-*·]\s*', '', line).strip()
+                if line.startswith(("•", "-", "*", "·")):
+                    ingredient = re.sub(r"^[•\-*·]\s*", "", line).strip()
                     recipe_data["ingredients"].append(ingredient)
                 elif line and line[0].isdigit():
                     # Some formats might use numbers
@@ -92,19 +92,19 @@ class RecipeConverter:
 
             elif current_section == "directions":
                 # Directions are numbered
-                match = re.match(r'^\d+\.\s*(.+)$', line)
+                match = re.match(r"^\d+\.\s*(.+)$", line)
                 if match:
                     recipe_data["directions"].append(match.group(1))
-                elif line and not line.endswith(':'):
+                elif line and not line.endswith(":"):
                     # Sometimes directions might not be numbered
                     recipe_data["directions"].append(line)
 
             elif current_section == "notes":
                 # Notes can be bullet points or paragraphs
-                if line.startswith(('•', '-', '*', '·')):
-                    note = re.sub(r'^[•\-*·]\s*', '', line).strip()
+                if line.startswith(("•", "-", "*", "·")):
+                    note = re.sub(r"^[•\-*·]\s*", "", line).strip()
                     recipe_data["notes"].append(note)
-                elif line and not line.endswith(':'):
+                elif line and not line.endswith(":"):
                     recipe_data["notes"].append(line)
 
             i += 1
@@ -122,7 +122,7 @@ class RecipeConverter:
         """Convert a single txt file to JSON format."""
         try:
             # Read the text file
-            with open(txt_path, encoding='utf-8') as f:
+            with open(txt_path, encoding="utf-8") as f:
                 txt_content = f.read()
 
             # Convert to Recipe object
@@ -130,7 +130,7 @@ class RecipeConverter:
 
             # Save as JSON
             json_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(json_path, 'w', encoding='utf-8') as f:
+            with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(recipe.model_dump(), f, indent=2)
 
             return True
@@ -149,12 +149,12 @@ class RecipeConverter:
 
         for txt_file in txt_files:
             # Skip index files
-            if txt_file.name in ['index.txt', 'recipes_batch_*.txt']:
+            if txt_file.name in ["index.txt", "recipes_batch_*.txt"]:
                 stats["skipped"] += 1
                 continue
 
             # Determine output path
-            json_file = json_dir / txt_file.with_suffix('.json').name
+            json_file = json_dir / txt_file.with_suffix(".json").name
 
             # Skip if JSON already exists
             if json_file.exists():

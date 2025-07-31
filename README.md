@@ -5,6 +5,9 @@ Extract recipes from images, web pages, and PDFs using AI. This tool uses OpenAI
 ## Features
 
 - 📸 Extract recipes from images (single or multiple images per recipe, including HEIC/HEIF)
+- 🖼️ **Automatic Image Detection**: Every page is analyzed for recipe photos - no flags needed!
+- ✂️ **Smart Image Cropping**: Automatic detection and cropping of recipe photos from cookbook pages
+- 🔢 **Automatic Fraction Conversion**: Unicode fractions (½, ¼, ⅓) are converted to standard format (1/2, 1/4, 1/3)
 - 📋 Extract recipes from clipboard images (just copy and run!)
 - 🌐 Scrape recipes from web pages with intelligent parsing
 - 📄 Extract recipes from PDF files
@@ -40,10 +43,7 @@ cd ai-recipes
 uv init
 
 # Add the project dependencies
-uv add openai pydantic pillow requests beautifulsoup4 pypdf2 click python-dotenv
-
-# Optional: Add HEIC support for iPhone photos
-uv add pillow-heif
+uv add openai pydantic pillow requests beautifulsoup4 pypdf2 click python-dotenv pillow-heif opencv-python numpy
 
 # Copy the source code from this repository
 # ... then run:
@@ -96,6 +96,21 @@ Multiple images (treated as one recipe):
 ```bash
 uv run ai-recipes image page1.jpg page2.jpg --batch
 ```
+
+**Automatic Image Processing**: Every image you provide is automatically analyzed for recipe photos. The tool will:
+- Detect recipe photos on each page using AI vision
+- Skip pure recipe text pages - only extract actual food photos
+- Use computer vision to detect and crop photo regions within cookbook pages
+- Handle pages with text only, text + images, or images only
+- Automatically crop and save photos to `recipes/{recipe_name}/images/`
+- Create a `metadata.json` file with recipe-aware image descriptions
+- Associate images with the recipe in both txt and JSON outputs
+
+Examples of handled page types:
+- Recipe text with accompanying food photo
+- Full-page food photography
+- Step-by-step preparation photos
+- Mixed layouts with multiple images
 
 ### Extract from Clipboard
 
@@ -197,12 +212,24 @@ uv run ai-recipes paprika recipes/json/chocolate_cake.json
 
 ## Output Structure
 
-Recipes are saved in two formats:
+Recipes are saved with the following structure:
 
 ```
 recipes/
-├── txt/     # Human-readable text files
-└── json/    # JSON files for Paprika and other integrations
+├── chocolate_chip_cookies/          # One folder per recipe
+│   ├── chocolate_chip_cookies.txt   # Human-readable text file
+│   ├── chocolate_chip_cookies.json  # JSON for integrations
+│   └── images/                      # Extracted recipe images
+│       ├── main.jpg                 # Main recipe photo
+│       ├── step_1.jpg               # Step-by-step photos
+│       ├── step_2.jpg
+│       └── metadata.json            # Image descriptions
+├── apple_pie/
+│   ├── apple_pie.txt
+│   ├── apple_pie.json
+│   └── images/
+│       └── main.jpg
+└── index.txt                        # Index of all recipes
 ```
 
 ### Text Format
@@ -220,7 +247,7 @@ SERVINGS: 24 cookies
 TOTAL TIME: 25 minutes
 
 INGREDIENTS:
-  • 2 1/4 cups all-purpose flour
+  • 2 1/4 cups all-purpose flour  (fractions like ½ are auto-converted to 1/2)
   • 1 tsp baking soda
   • 1 tsp salt
   • 1 cup butter, softened
@@ -246,6 +273,12 @@ NOTES:
   • Can be frozen for up to 3 months
 
 SOURCE: Grandma's Recipe Book
+
+IMAGES:
+  • [Main] main.jpg
+    Golden brown chocolate chip cookies on a cooling rack
+  • [Step] step_1.jpg
+    Mixing the cookie dough in a large bowl
 ```
 
 ### JSON Format
@@ -266,9 +299,10 @@ uv add --dev pytest pytest-cov black ruff mypy types-requests
 ```
 ai-recipes/
 ├── src/
-│   ├── models.py         # Pydantic recipe model
+│   ├── models.py         # Pydantic recipe model with fraction conversion
 │   ├── extractors/       # Content extraction modules
 │   │   ├── image.py      # Image processing (including HEIC)
+│   │   ├── recipe_image_extractor.py  # Smart image cropping from pages
 │   │   ├── clipboard.py  # Clipboard image extraction
 │   │   ├── web.py        # Web scraping
 │   │   └── pdf.py        # PDF processing
@@ -278,8 +312,6 @@ ai-recipes/
 │   ├── formatter.py      # Output formatting
 │   └── cli.py           # Command-line interface
 ├── recipes/              # Output directory (gitignored)
-│   ├── txt/             # Human-readable text recipes
-│   └── json/            # JSON format for integrations
 ├── pyproject.toml       # Project configuration and dependencies
 ├── Makefile            # Development commands
 └── README.md
