@@ -487,9 +487,20 @@ Please identify:
         return output_path
 
     def extract_recipe_images(
-        self, image_paths: List[str], recipe_name: str, recipe_dir: str
+        self,
+        image_paths: List[str],
+        recipe_name: str,
+        recipe_dir: str,
+        progress_callback=None,
     ) -> Dict[str, Any]:
-        """Extract and organize recipe images from multiple input images."""
+        """Extract and organize recipe images from multiple input images.
+
+        Args:
+            image_paths: List of paths to images to process
+            recipe_name: Name of the recipe
+            recipe_dir: Directory where recipe is saved
+            progress_callback: Optional callback function(current, total, message) to report progress
+        """
 
         # The recipe directory already exists from save_recipe
         recipe_path = Path(recipe_dir)
@@ -512,7 +523,13 @@ Please identify:
         step_photo_count = 0
         other_photo_count = 0
 
+        total_images = len(image_paths)
         for idx, image_path in enumerate(image_paths):
+            if progress_callback:
+                progress_callback(
+                    idx, total_images, f"Analyzing image {idx + 1} of {total_images}..."
+                )
+
             try:
                 # Copy original image to originals directory
                 original_filename = Path(image_path).name

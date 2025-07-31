@@ -77,8 +77,15 @@ class ImageExtractor:
             },
         ]
 
-    def process_multiple_images(self, image_paths: List[str]) -> List[Dict[str, Any]]:
-        """Process multiple images and return combined content for LLM."""
+    def process_multiple_images(
+        self, image_paths: List[str], progress_callback=None
+    ) -> List[Dict[str, Any]]:
+        """Process multiple images and return combined content for LLM.
+
+        Args:
+            image_paths: List of paths to images to process
+            progress_callback: Optional callback function(current, total, message) to report progress
+        """
         content = [
             {
                 "type": "text",
@@ -86,7 +93,15 @@ class ImageExtractor:
             }
         ]
 
-        for image_path in image_paths:
+        total_images = len(image_paths)
+        for idx, image_path in enumerate(image_paths):
+            if progress_callback:
+                progress_callback(
+                    idx,
+                    total_images,
+                    f"Processing image {idx + 1} of {total_images}...",
+                )
+
             try:
                 # Process each image and add to content
                 single_image_content = self.process_image(image_path)

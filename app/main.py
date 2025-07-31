@@ -297,7 +297,11 @@ class StreamlitRecipeApp:
                     try:
                         # Save all uploaded files temporarily
                         temp_paths = []
-                        for uploaded_file in uploaded_files:
+                        status_text.text("Preparing images...")
+                        for idx, uploaded_file in enumerate(uploaded_files):
+                            progress_bar.progress(
+                                (idx / len(uploaded_files)) * 0.2
+                            )  # 0-20% for file prep
                             with tempfile.NamedTemporaryFile(
                                 delete=False, suffix=Path(uploaded_file.name).suffix
                             ) as tmp_file:
@@ -305,31 +309,67 @@ class StreamlitRecipeApp:
                                 temp_paths.append(tmp_file.name)
 
                         try:
+                            # Define progress callback for image processing
+                            def image_progress_callback(current, total, message):
+                                # Image processing takes 20-50% of the progress
+                                progress = 0.2 + (current / total) * 0.3
+                                progress_bar.progress(progress)
+                                status_text.text(message)
+
                             # Process all images together
                             extractor = ImageExtractor()
-                            content = extractor.process_multiple_images(temp_paths)
+                            content = extractor.process_multiple_images(
+                                temp_paths, progress_callback=image_progress_callback
+                            )
 
-                            # Extract recipe using LLM
+                            # Extract recipe using LLM (50-70%)
+                            status_text.text(
+                                "Extracting recipe from combined images..."
+                            )
+                            progress_bar.progress(0.5)
+
                             llm_client = LLMClient(api_key=self.api_key)
                             source_names = ", ".join([f.name for f in uploaded_files])
                             recipe = llm_client.extract_recipe(
                                 content, source=f"Combined from: {source_names}"
                             )
 
-                            # Save combined recipe to /recipes directory
+                            progress_bar.progress(0.7)
+
+                            # Save combined recipe to /recipes directory (70-75%)
+                            status_text.text("Saving recipe...")
                             formatter = RecipeFormatter()
                             recipe_dir = formatter.save_recipe(recipe)
+                            progress_bar.progress(0.75)
 
-                            # Extract recipe images if multiple pages
+                            # Extract recipe images if multiple pages (75-95%)
                             if len(temp_paths) > 1:
+                                status_text.text(
+                                    "Extracting and organizing recipe images..."
+                                )
+                                progress_bar.progress(0.8)
+
+                                # Define progress callback for image extraction
+                                def extraction_progress_callback(
+                                    current, total, message
+                                ):
+                                    # Image extraction takes 80-95% of the progress
+                                    progress = 0.8 + (current / total) * 0.15
+                                    progress_bar.progress(progress)
+                                    status_text.text(message)
+
                                 recipe_image_extractor = RecipeImageExtractor(
                                     llm_client
                                 )
                                 image_metadata = (
                                     recipe_image_extractor.extract_recipe_images(
-                                        temp_paths, recipe.name, recipe_dir
+                                        temp_paths,
+                                        recipe.name,
+                                        recipe_dir,
+                                        progress_callback=extraction_progress_callback,
                                     )
                                 )
+                                progress_bar.progress(0.95)
 
                                 # Update recipe with image references
                                 recipe.images = [
