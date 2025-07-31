@@ -29,7 +29,17 @@ Extract the following information:
 - Description: The EXACT description text as it appears in the source, typically found after the title and before ingredients. Copy this verbatim - do not paraphrase or summarize.
 - Servings: Number of servings or yield (e.g., "4 servings", "12 cookies", "1 9-inch pie")
 - Total_time: Total time ONLY if explicitly stated in the recipe (e.g., "45 minutes", "1 hour 30 minutes"). Do NOT calculate or infer this - only include if the source explicitly states total time. Leave as null if not provided.
-- Ingredients: List each ingredient with its quantity on a separate line. IMPORTANT: Use standard fractions like 1/2, 1/3, 1/4 instead of Unicode fraction characters (½, ⅓, ¼)
+- Ingredients: Extract each ingredient as a structured object with:
+  - amount: Object containing:
+    - quantity: The numeric amount (like "1", "2.5", "1/2", "1-2")
+    - unit: The measurement unit (like "cup", "tablespoon", "pound", "ounce")
+  - item: Object containing:
+    - name: The core ingredient name ONLY (like "salt", "cumin", "flour", "butter", "jalapeños")
+    - modifiers: List of descriptors/specifications (like ["kosher"], ["ground"], ["all-purpose"], ["unsalted", "softened"])
+    - alternative: If there's a substitution mentioned (like "or serrano peppers"), create another item object for the alternative
+  IMPORTANT:
+  - Separate the base ingredient name from its modifiers (e.g., "kosher salt" → name: "salt", modifiers: ["kosher"])
+  - Use standard fractions like 1/2, 1/3, 1/4 instead of Unicode fraction characters (½, ⅓, ¼)
 - Directions: Step-by-step cooking instructions, each step on a new line
 - Notes: Any additional tips, variations, storage instructions, or important information (as an array, one note per item)
 - Source: The source of the recipe (if not provided, leave empty)

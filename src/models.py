@@ -1,6 +1,91 @@
-from typing import List, Optional
+from __future__ import annotations
+
+import re
 
 from pydantic import BaseModel, Field, field_validator
+
+
+class Amount(BaseModel):
+    """Represents the amount/quantity for an ingredient."""
+    quantity: str | None = Field(
+        default=None,
+        description="The numeric quantity (e.g., '1', '2.5', '1/2', '1-2')"
+    )
+    unit: str | None = Field(
+        default=None,
+        description="The unit of measurement (e.g., 'cup', 'tablespoon', 'pound')"
+    )
+
+    @field_validator('quantity', mode='before')
+    @classmethod
+    def convert_amount_fractions(cls, v: str | None) -> str | None:
+        """Convert Unicode fractions in quantities to readable format."""
+        return convert_unicode_fractions(v) if v else v
+
+
+class Item(BaseModel):
+    """Represents the ingredient item with name and modifiers."""
+    name: str = Field(
+        description="The main ingredient name (e.g., 'flour', 'butter', 'eggs', 'salt', 'cumin')"
+    )
+    modifiers: list[str] | None = Field(
+        default=None,
+        description="List of modifiers/specifications (e.g., ['all-purpose'], ['unsalted', 'softened'], ['kosher'], ['ground'])"
+    )
+    alternative: Item | None = Field(
+        default=None,
+        description="Alternative ingredient that can be substituted (e.g., 'serrano peppers' instead of 'jalapeños')"
+    )
+
+    @field_validator('name', mode='before')
+    @classmethod
+    def convert_name_fractions(cls, v: str) -> str:
+        """Convert Unicode fractions in names to readable format."""
+        return convert_unicode_fractions(v) if v else v
+
+    @field_validator('modifiers', mode='before')
+    @classmethod
+    def convert_modifiers_fractions(cls, v: list[str] | None) -> list[str] | None:
+        """Convert Unicode fractions in modifiers to readable format."""
+        if isinstance(v, list):
+            return [convert_unicode_fractions(mod) for mod in v]
+        return v
+
+    def to_string(self) -> str:
+        """Convert item to human-readable string."""
+        parts = []
+        if self.modifiers:
+            parts.append(', '.join(self.modifiers))
+        parts.append(self.name)
+        result = ' '.join(parts)
+
+        if self.alternative:
+            result += f" (or {self.alternative.to_string()})"
+
+        return result
+
+
+
+
+class Ingredient(BaseModel):
+    """Represents a single ingredient with amount and item details."""
+    amount: Amount | None = Field(
+        default=None,
+        description="The amount/quantity of the ingredient"
+    )
+    item: Item = Field(
+        description="The ingredient item with name and modifiers"
+    )
+
+    def to_string(self) -> str:
+        """Convert ingredient to human-readable string."""
+        if self.amount and self.amount.quantity:
+            parts = [self.amount.quantity]
+            if self.amount.unit:
+                parts.append(self.amount.unit)
+            parts.append(self.item.to_string())
+            return " ".join(parts)
+        return self.item.to_string()
 
 
 class RecipeImage(BaseModel):
@@ -54,40 +139,91 @@ class Recipe(BaseModel):
     description: str = Field(
         description="The exact description text from the source document, typically found after the recipe title and before the ingredients list. Copy this verbatim from the source."
     )
-    servings: Optional[str] = Field(
+    servings: str | None = Field(
         default=None,
         description="Number of servings or yield (e.g., '4 servings', '12 cookies', '1 9-inch pie')",
     )
-    total_time: Optional[str] = Field(
+    total_time: str | None = Field(
         default=None,
         description="Total cook time including prep and cooking (e.g., '45 minutes', '1 hour 30 minutes')",
     )
-    ingredients: List[str] = Field(
-        description="List of ingredients with quantities. Use standard fractions like 1/2, 1/3, 1/4 instead of Unicode fraction characters."
+    ingredients: list[Ingredient] = Field(
+        description="List of ingredients with structured amounts and items"
     )
-    directions: List[str] = Field(description="Step-by-step cooking directions")
-    notes: Optional[List[str]] = Field(
+    directions: list[str] = Field(description="Step-by-step cooking directions")
+    notes: list[str] | None = Field(
         default=None,
         description="Additional notes, tips, variations, or storage instructions (e.g., 'Store in airtight container for up to 5 days', 'Can be frozen for 3 months', 'Refrigerate leftovers')",
     )
-    source: Optional[str] = Field(
+    source: str | None = Field(
         default=None, description="Source of the recipe (cookbook, website, etc.)"
     )
-    images: Optional[List[RecipeImage]] = Field(
+    images: list[RecipeImage] | None = Field(
         default=None, description="Associated recipe images"
     )
 
     @field_validator("ingredients", mode="before")
     @classmethod
-    def convert_ingredient_fractions(cls, v: List[str]) -> List[str]:
-        """Convert Unicode fractions in ingredients to readable format."""
-        if isinstance(v, list):
-            return [convert_unicode_fractions(ingredient) for ingredient in v]
-        return v
+    def parse_ingredients(cls, v: list[str] | list[dict] | list[Ingredient]) -> list[Ingredient]:
+        """Parse ingredients from various input formats."""
+        if not isinstance(v, list):
+            return v
+
+        result = []
+        for item in v:
+            # If it's already an Ingredient object, keep it
+            if isinstance(item, Ingredient):
+                result.append(item)
+            # If it's a dict (from JSON), parse it
+            elif isinstance(item, dict):
+                result.append(Ingredient(**item))
+            # If it's a string (legacy format), parse it into structured format
+            elif isinstance(item, str):
+                # Enhanced parsing to handle common patterns
+                item = item.strip()
+
+                # Try to extract quantity and unit
+                amount = None
+                remaining = item
+
+                # Pattern: "1 1/2 cups" or "2 tablespoons" or "1/2 teaspoon"
+                quantity_pattern = r'^([0-9]+(?:\s+[0-9]+/[0-9]+)?|[0-9]+/[0-9]+|[0-9]+(?:\.[0-9]+)?|[0-9]+-[0-9]+)\s+'
+                match = re.match(quantity_pattern, item)
+
+                if match:
+                    quantity = match.group(1)
+                    remaining = item[match.end():]
+
+                    # Try to extract unit
+                    unit_words = ['cup', 'cups', 'tablespoon', 'tablespoons', 'teaspoon', 'teaspoons',
+                                  'pound', 'pounds', 'ounce', 'ounces', 'stick', 'sticks', 'can', 'cans',
+                                  'package', 'packages', 'clove', 'cloves', 'inch', 'inches', 'piece', 'pieces']
+                    unit_found = False
+                    for unit in unit_words:
+                        if remaining.lower().startswith(unit):
+                            amount = Amount(quantity=quantity, unit=unit)
+                            remaining = remaining[len(unit):].strip()
+                            unit_found = True
+                            break
+
+                    if not unit_found:
+                        # No unit found, just quantity
+                        amount = Amount(quantity=quantity)
+
+                # Parse the item (ingredient name and modifiers)
+                # For now, treat the whole remaining string as the name
+                # In future, we could parse modifiers more intelligently
+                item_obj = Item(name=remaining, modifiers=None)
+
+                result.append(Ingredient(
+                    amount=amount,
+                    item=item_obj
+                ))
+        return result
 
     @field_validator("directions", mode="before")
     @classmethod
-    def convert_direction_fractions(cls, v: List[str]) -> List[str]:
+    def convert_direction_fractions(cls, v: list[str]) -> list[str]:
         """Convert Unicode fractions in directions to readable format."""
         if isinstance(v, list):
             return [convert_unicode_fractions(direction) for direction in v]
@@ -95,13 +231,13 @@ class Recipe(BaseModel):
 
     @field_validator("description", "servings", "total_time", mode="before")
     @classmethod
-    def convert_text_fractions(cls, v: Optional[str]) -> Optional[str]:
+    def convert_text_fractions(cls, v: str | None) -> str | None:
         """Convert Unicode fractions in text fields to readable format."""
         return convert_unicode_fractions(v) if v else v
 
     @field_validator("notes", mode="before")
     @classmethod
-    def convert_notes_fractions(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+    def convert_notes_fractions(cls, v: list[str] | None) -> list[str] | None:
         """Convert Unicode fractions in notes to readable format."""
         if isinstance(v, list):
             return [convert_unicode_fractions(note) for note in v]
@@ -133,7 +269,7 @@ class Recipe(BaseModel):
         # Ingredients
         lines.append("INGREDIENTS:")
         for ingredient in self.ingredients:
-            lines.append(f"  • {ingredient}")
+            lines.append(f"  • {ingredient.to_string()}")
         lines.append("")
 
         # Directions

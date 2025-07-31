@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -492,9 +493,14 @@ Please identify:
         images_dir = recipe_path / "images"
         images_dir.mkdir(parents=True, exist_ok=True)
 
+        # Create originals subdirectory for source images
+        originals_dir = images_dir / "originals"
+        originals_dir.mkdir(parents=True, exist_ok=True)
+
         metadata = {
             "recipe_name": recipe_name,
             "source_images": len(image_paths),
+            "original_images": [Path(p).name for p in image_paths],
             "extracted_images": [],
         }
 
@@ -505,6 +511,13 @@ Please identify:
 
         for idx, image_path in enumerate(image_paths):
             try:
+                # Copy original image to originals directory
+                original_filename = Path(image_path).name
+                original_dest = originals_dir / original_filename
+
+                # Copy the original image file directly (preserve format and metadata)
+                shutil.copy2(image_path, str(original_dest))
+
                 # Analyze image with recipe name context
                 analysis = self.analyze_image_content(image_path, recipe_name)
 
