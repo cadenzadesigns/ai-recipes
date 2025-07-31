@@ -207,10 +207,10 @@ Please identify:
             },
         ]
 
+        # Use structured output with Pydantic model
         # Use temperature 1.0 for o4-mini model (required), 0.1 for others
         temperature = 1.0 if self.llm_client.model == "o4-mini" else 0.1
 
-        # Use structured output with Pydantic model
         response = self.llm_client.client.beta.chat.completions.parse(
             model=self.llm_client.model,
             messages=messages,
