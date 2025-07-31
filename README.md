@@ -43,7 +43,7 @@ cd ai-recipes
 uv init
 
 # Add the project dependencies
-uv add openai pydantic pillow requests beautifulsoup4 pypdf2 click python-dotenv pillow-heif opencv-python numpy
+uv add openai pydantic pillow requests beautifulsoup4 pypdf2 click python-dotenv pillow-heif opencv-python numpy streamlit
 
 # Copy the source code from this repository
 # ... then run:
@@ -82,6 +82,28 @@ cp .env.example .env
 ```
 
 ## Usage
+
+### Web Application
+
+AI Recipe Extractor includes a user-friendly web interface built with Streamlit:
+
+```bash
+# Start the web app
+uv run streamlit run app/main.py
+
+# Access at http://localhost:8501
+```
+
+**Features:**
+- 📸 **Single Image**: Extract recipe from one image with drag & drop
+- 📚 **Batch Images**: Process multiple images as separate recipes or combine into one
+- 🌐 **Web URL**: Extract recipes from any webpage
+- 📄 **PDF Upload**: Extract recipes from PDF cookbooks
+- 💾 **Auto-save**: All recipes are automatically saved to the `/recipes` directory
+- 🖼️ **Image Detection**: Automatic recipe photo extraction and cropping
+- 📥 **Downloads**: Export as TXT, JSON, or ZIP archives
+
+### Command Line Interface
 
 Use `uv run` to execute commands in the project environment:
 
@@ -208,7 +230,7 @@ uv run ai-recipes paprika recipes/json/chocolate_cake.json
 - `--output-dir, -o`: Specify output directory (default: `recipes/`)
 - `--batch, -b`: Save multiple recipes in a single file
 - `--source, -s`: Add source information to recipes
-- `--model`: Specify OpenAI model (default: `gpt-4o`)
+- `--model`: Specify OpenAI model (default: `o4-mini`)
 
 ## Output Structure
 
@@ -299,6 +321,7 @@ uv add --dev pytest pytest-cov black ruff mypy types-requests
 ```
 ai-recipes/
 ├── src/
+│   ├── config.py         # Central configuration (OpenAI model settings)
 │   ├── models.py         # Pydantic recipe model with fraction conversion
 │   ├── extractors/       # Content extraction modules
 │   │   ├── image.py      # Image processing (including HEIC)
@@ -311,9 +334,19 @@ ai-recipes/
 │   ├── converter.py      # Text to JSON converter
 │   ├── formatter.py      # Output formatting
 │   └── cli.py           # Command-line interface
+├── app/                  # Streamlit web application
+│   ├── main.py          # Main web app entry point
+│   ├── config.py        # Web app configuration
+│   ├── utils.py         # Utility functions
+│   └── components/      # Reusable UI components
+│       ├── batch_processor.py    # Batch image processing
+│       ├── download_manager.py   # File download handling
+│       ├── image_upload.py       # Image upload components
+│       └── recipe_display.py     # Recipe display components
 ├── recipes/              # Output directory (gitignored)
 ├── pyproject.toml       # Project configuration and dependencies
 ├── Makefile            # Development commands
+├── CLAUDE.md           # AI assistant guidelines
 └── README.md
 ```
 

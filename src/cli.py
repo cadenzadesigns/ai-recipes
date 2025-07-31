@@ -3,6 +3,7 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
+from .config import OPENAI_MODEL
 from .converter import RecipeConverter
 from .extractors.clipboard import ClipboardExtractor
 from .extractors.image import ImageExtractor
@@ -19,7 +20,7 @@ load_dotenv()
 
 @click.group()
 @click.option("--api-key", envvar="OPENAI_API_KEY", help="OpenAI API key")
-@click.option("--model", default="gpt-4o", help="LLM model to use")
+@click.option("--model", default=OPENAI_MODEL, help="LLM model to use")
 @click.pass_context
 def cli(ctx, api_key, model):
     """AI Recipe Extractor - Extract recipes from images, web pages, and PDFs."""

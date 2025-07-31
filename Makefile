@@ -21,24 +21,24 @@ install:
 sync:
 	uv sync
 
-# Run ruff linter with auto-fix
-ruff:
-	uv run ruff check --fix src/
+# Run ruff linter with auto-fix (runs format first)
+ruff: format
+	uv run ruff check --fix src/ app/
 
 # Format code with black
 format:
-	uv run black src/
+	uv run black src/ app/
 
 # Check formatting without modifying
 format-check:
-	uv run black --check src/
+	uv run black --check src/ app/
 
 # Run all linting
 lint: ruff format-check
 
 # Type checking
 type-check:
-	uv run mypy src/
+	uv run mypy src/ app/
 
 # Run tests
 test:

@@ -3,11 +3,12 @@ from typing import Any, Dict, List, Union
 
 from openai import OpenAI
 
+from .config import OPENAI_MODEL
 from .models import Recipe
 
 
 class LLMClient:
-    def __init__(self, api_key: str = None, model: str = "gpt-4o"):
+    def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ValueError(
@@ -15,7 +16,7 @@ class LLMClient:
             )
 
         self.client = OpenAI(api_key=self.api_key)
-        self.model = model
+        self.model = model or OPENAI_MODEL
 
     def extract_recipe(
         self, content: Union[str, List[Dict[str, Any]]], source: str = None
@@ -58,11 +59,14 @@ Be thorough and accurate. If information is missing, use null for optional field
         messages.append(user_message)
 
         try:
+            # Use temperature 1.0 for o4-mini model (required), 0.1 for others
+            temperature = 1.0 if self.model == "o4-mini" else 0.1
+
             # Use structured output with Pydantic model
             response = self.client.beta.chat.completions.parse(
                 model=self.model,
                 messages=messages,
-                temperature=0.1,
+                temperature=temperature,
                 response_format=Recipe,
             )
 
