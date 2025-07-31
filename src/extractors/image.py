@@ -35,7 +35,7 @@ class ImageExtractor:
                     raise ValueError(
                         "HEIC/HEIF support requires pillow-heif. Install with: uv add pillow-heif"
                     )
-            
+
             img = Image.open(image_path)
             # Convert RGBA to RGB if necessary
             if img.mode in ('RGBA', 'LA'):

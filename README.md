@@ -4,13 +4,15 @@ Extract recipes from images, web pages, and PDFs using AI. This tool uses OpenAI
 
 ## Features
 
-- 📸 Extract recipes from images (single or multiple images per recipe)
+- 📸 Extract recipes from images (single or multiple images per recipe, including HEIC/HEIF)
 - 📋 Extract recipes from clipboard images (just copy and run!)
 - 🌐 Scrape recipes from web pages with intelligent parsing
 - 📄 Extract recipes from PDF files
 - 🤖 AI-powered extraction using OpenAI's GPT models
-- 📝 Clean, formatted text output for easy copying
+- 📝 Dual output: human-readable text files AND JSON for integrations
 - 🔄 Batch processing support
+- 🍳 Paprika Recipe Manager integration
+- 🔀 Convert existing text recipes to JSON format
 - 📋 Structured data validation with Pydantic
 
 ## Prerequisites
@@ -40,9 +42,8 @@ uv init
 # Add the project dependencies
 uv add openai pydantic pillow requests beautifulsoup4 pypdf2 click python-dotenv
 
-# Optional: Add platform-specific clipboard support
-# On macOS:
-uv add --optional macos
+# Optional: Add HEIC support for iPhone photos
+uv add pillow-heif
 
 # Copy the source code from this repository
 # ... then run:
@@ -72,10 +73,12 @@ This will automatically:
 - Install all dependencies from `pyproject.toml`
 - Create a `uv.lock` file for reproducible installs
 
-3. Set up your OpenAI API key:
+3. Set up your API keys:
 ```bash
 cp .env.example .env
-# Edit .env and add your OpenAI API key
+# Edit .env and add:
+# - Your OpenAI API key (required)
+# - Your Paprika credentials (optional, for upload feature)
 ```
 
 ## Usage
@@ -140,6 +143,51 @@ Process all inputs:
 uv run ai-recipes batch recipes.txt
 ```
 
+### Convert Text Recipes to JSON
+
+Convert all existing text recipes:
+```bash
+uv run ai-recipes convert
+```
+
+Convert a single text file:
+```bash
+uv run ai-recipes convert -s recipes/txt/chocolate_cake.txt
+```
+
+### Upload to Paprika (Experimental)
+
+**⚠️ Known Issues with Paprika API Integration**
+
+We've implemented Paprika upload functionality, but there are significant limitations:
+
+1. **Authentication works** - We can authenticate with the v2 API using macOS client headers
+2. **Uploads succeed** - The API accepts recipes and returns success
+3. **Recipes don't sync** - Uploaded recipes don't appear in the recipe list or Paprika apps
+
+This appears to be because:
+- The Paprika API is unofficial and undocumented
+- Uploaded recipes may go to a staging area that requires server-side processing
+- The sync mechanism between API uploads and user apps is unclear
+
+**Current Status**: The upload command exists but recipes won't appear in your Paprika apps.
+
+```bash
+# Setup (for future use when sync issues are resolved):
+# Add to .env:
+# PAPRIKA_EMAIL=your-email@example.com
+# PAPRIKA_PASSWORD=your-paprika-password
+
+# Upload attempt (recipes won't sync to apps):
+uv run ai-recipes paprika recipes/json/chocolate_cake.json
+```
+
+**Recommended Workaround**: 
+- Use the generated `.txt` files with Paprika's built-in import features
+- Copy recipe text and paste into Paprika's manual entry
+- Use Paprika's browser extension for web recipes
+- Email recipes to your Paprika import email address
+
 ### Options
 
 - `--output-dir, -o`: Specify output directory (default: `recipes/`)
@@ -147,16 +195,29 @@ uv run ai-recipes batch recipes.txt
 - `--source, -s`: Add source information to recipes
 - `--model`: Specify OpenAI model (default: `gpt-4o`)
 
-## Output Format
+## Output Structure
 
-Recipes are saved as formatted text files with the following structure:
+Recipes are saved in two formats:
 
 ```
-RECIPE: Chocolate Chip Cookies
+recipes/
+├── txt/     # Human-readable text files
+└── json/    # JSON files for Paprika and other integrations
+```
+
+### Text Format
+
+The text files are formatted for easy reading and copying:
+
+```
+Chocolate Chip Cookies
 ================================
 
 DESCRIPTION:
 Classic homemade chocolate chip cookies that are crispy on the outside and chewy on the inside.
+
+SERVINGS: 24 cookies
+TOTAL TIME: 25 minutes
 
 INGREDIENTS:
   • 2 1/4 cups all-purpose flour
@@ -180,10 +241,16 @@ DIRECTIONS:
   8. Bake 9-11 minutes or until golden brown.
 
 NOTES:
-For chewier cookies, slightly underbake them. Store in an airtight container.
+  • For chewier cookies, slightly underbake them
+  • Store in an airtight container for up to 5 days
+  • Can be frozen for up to 3 months
 
 SOURCE: Grandma's Recipe Book
 ```
+
+### JSON Format
+
+The JSON files contain structured data perfect for importing into recipe management apps like Paprika.
 
 ## Development
 
@@ -201,13 +268,20 @@ ai-recipes/
 ├── src/
 │   ├── models.py         # Pydantic recipe model
 │   ├── extractors/       # Content extraction modules
-│   │   ├── image.py      # Image processing
+│   │   ├── image.py      # Image processing (including HEIC)
+│   │   ├── clipboard.py  # Clipboard image extraction
 │   │   ├── web.py        # Web scraping
 │   │   └── pdf.py        # PDF processing
 │   ├── llm_client.py     # OpenAI API integration
+│   ├── paprika_client.py # Paprika Recipe Manager API
+│   ├── converter.py      # Text to JSON converter
 │   ├── formatter.py      # Output formatting
 │   └── cli.py           # Command-line interface
+├── recipes/              # Output directory (gitignored)
+│   ├── txt/             # Human-readable text recipes
+│   └── json/            # JSON format for integrations
 ├── pyproject.toml       # Project configuration and dependencies
+├── Makefile            # Development commands
 └── README.md
 ```
 
@@ -220,8 +294,8 @@ uv run pytest
 # Format code
 uv run black src/
 
-# Lint code
-uv run ruff src/
+# Lint and auto-fix code
+make ruff
 
 # Type checking
 uv run mypy src/
@@ -240,11 +314,24 @@ uv add --dev package-name
 uv remove package-name
 ```
 
+## Recipe Data Model
+
+The tool extracts the following information:
+- **Name**: Recipe title
+- **Description**: Exact text from the source (preserved verbatim)
+- **Servings**: Yield information (e.g., "4 servings", "12 cookies")
+- **Total Time**: Total cook time (only if explicitly stated in source)
+- **Ingredients**: List with quantities
+- **Directions**: Step-by-step instructions
+- **Notes**: Tips, variations, and storage instructions (as bullet points)
+- **Source**: Where the recipe came from
+
 ## Requirements
 
 - Python 3.8+ (uv will automatically download the correct Python version)
 - OpenAI API key
 - Internet connection for web scraping and API calls
+- Optional: Paprika Recipe Manager account for upload feature
 
 ## License
 

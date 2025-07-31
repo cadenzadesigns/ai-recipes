@@ -43,7 +43,8 @@ uv.lock
 
 # Output
 recipes/
-*.txt
+recipes/txt/
+recipes/json/
 
 # OS
 .DS_Store

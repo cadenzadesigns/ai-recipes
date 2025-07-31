@@ -10,7 +10,7 @@ class Recipe(BaseModel):
     total_time: Optional[str] = Field(default=None, description="Total cook time including prep and cooking (e.g., '45 minutes', '1 hour 30 minutes')")
     ingredients: List[str] = Field(description="List of ingredients with quantities")
     directions: List[str] = Field(description="Step-by-step cooking directions")
-    notes: Optional[str] = Field(default=None, description="Additional notes, tips, variations, or storage instructions (e.g., 'Store in airtight container for up to 5 days', 'Can be frozen for 3 months', 'Refrigerate leftovers')")
+    notes: Optional[List[str]] = Field(default=None, description="Additional notes, tips, variations, or storage instructions (e.g., 'Store in airtight container for up to 5 days', 'Can be frozen for 3 months', 'Refrigerate leftovers')")
     source: Optional[str] = Field(default=None, description="Source of the recipe (cookbook, website, etc.)")
 
     def to_text(self) -> str:
@@ -18,7 +18,7 @@ class Recipe(BaseModel):
         lines = []
 
         # Name
-        lines.append(f"RECIPE: {self.name}")
+        lines.append(f"{self.name}")
         lines.append("=" * (len(self.name) + 8))
         lines.append("")
 
@@ -51,7 +51,8 @@ class Recipe(BaseModel):
         # Notes
         if self.notes:
             lines.append("NOTES:")
-            lines.append(self.notes)
+            for note in self.notes:
+                lines.append(f"  • {note}")
             lines.append("")
 
         # Source

@@ -3,12 +3,14 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
+from .converter import RecipeConverter
 from .extractors.clipboard import ClipboardExtractor
 from .extractors.image import ImageExtractor
 from .extractors.pdf import PDFExtractor
 from .extractors.web import WebExtractor
 from .formatter import RecipeFormatter
 from .llm_client import LLMClient
+from .paprika_client import PaprikaClient
 
 # Load environment variables
 load_dotenv()
@@ -232,6 +234,118 @@ def batch(ctx, input_file, output_dir, batch):
         click.echo(f"Created index: {index_path}")
     else:
         click.echo("\nNo recipes were successfully extracted.", err=True)
+
+
+@cli.command()
+@click.argument('recipe_file', type=click.Path(exists=True))
+@click.option('--email', '-e', envvar='PAPRIKA_EMAIL', help='Paprika email')
+@click.option('--password', '-p', envvar='PAPRIKA_PASSWORD', help='Paprika password')
+@click.pass_context
+def paprika(ctx, recipe_file, email, password):
+    """Upload a recipe to Paprika Recipe Manager."""
+
+    try:
+        paprika_client = PaprikaClient(email=email, password=password)
+    except ValueError as e:
+        click.echo(f"✗ {str(e)}", err=True)
+        click.echo("\nSet credentials in .env file or use -e and -p options", err=True)
+        return
+
+    # Read the recipe file
+    import json
+
+    from .models import Recipe
+
+    try:
+        with open(recipe_file) as f:
+            content = f.read()
+
+        # Try to parse as JSON (in case we saved recipes as JSON)
+        try:
+            recipe_data = json.loads(content)
+            recipe = Recipe(**recipe_data)
+        except json.JSONDecodeError:
+            # Otherwise, we need to parse the text format
+            # For now, we'll need to extract from the text file
+            click.echo("✗ Currently only JSON recipe files are supported for upload", err=True)
+            return
+
+        click.echo(f"Uploading '{recipe.name}' to Paprika...")
+
+        # Skip the search for now since it requires fetching each recipe
+        # # Check if recipe already exists
+        # existing = paprika_client.search_recipe(recipe.name)
+        # if existing:
+        #     if not click.confirm(f"Recipe '{recipe.name}' already exists. Overwrite?"):
+        #         return
+
+        # Upload the recipe
+        result = paprika_client.upload_recipe(recipe)
+        click.echo("✓ Successfully uploaded recipe to Paprika!")
+
+        if isinstance(result, dict) and 'uid' in result:
+            click.echo(f"Recipe ID: {result['uid']}")
+
+    except Exception as e:
+        click.echo(f"✗ Failed to upload recipe: {str(e)}", err=True)
+
+
+@cli.command()
+@click.option('--input-dir', '-i', default='recipes', help='Input directory containing txt files')
+@click.option('--output-dir', '-o', help='Output directory for JSON files (default: input_dir/json)')
+@click.option('--single', '-s', type=click.Path(exists=True), help='Convert a single txt file')
+@click.pass_context
+def convert(ctx, input_dir, output_dir, single):
+    """Convert recipe txt files to JSON format."""
+
+    if single:
+        # Convert a single file
+        txt_path = Path(single)
+        if not txt_path.suffix == '.txt':
+            click.echo("✗ File must be a .txt file", err=True)
+            return
+
+        # Determine output path
+        if output_dir:
+            json_dir = Path(output_dir)
+        else:
+            # Default to json subdirectory
+            json_dir = txt_path.parent / 'json'
+
+        json_dir.mkdir(parents=True, exist_ok=True)
+        json_path = json_dir / txt_path.with_suffix('.json').name
+
+        click.echo(f"Converting {txt_path.name}...")
+
+        if RecipeConverter.convert_txt_file_to_json(txt_path, json_path):
+            click.echo(f"✓ Converted to: {json_path}")
+        else:
+            click.echo("✗ Conversion failed", err=True)
+
+    else:
+        # Batch convert
+        txt_dir = Path(input_dir)
+
+        # For legacy support, check if txt files are in root recipes dir
+        if not (txt_dir / 'txt').exists() and list(txt_dir.glob('*.txt')):
+            click.echo("Found txt files in root directory. Converting...")
+            json_dir = txt_dir / 'json' if not output_dir else Path(output_dir)
+        else:
+            txt_dir = txt_dir / 'txt'
+            json_dir = txt_dir.parent / 'json' if not output_dir else Path(output_dir)
+
+        if not txt_dir.exists():
+            click.echo(f"✗ Directory not found: {txt_dir}", err=True)
+            return
+
+        click.echo(f"Converting txt files from {txt_dir} to {json_dir}...")
+
+        stats = RecipeConverter.batch_convert(txt_dir, json_dir)
+
+        click.echo("\n✓ Conversion complete:")
+        click.echo(f"  - Converted: {stats['success']} files")
+        click.echo(f"  - Failed: {stats['failed']} files")
+        click.echo(f"  - Skipped: {stats['skipped']} files (already exist or index files)")
 
 
 if __name__ == '__main__':

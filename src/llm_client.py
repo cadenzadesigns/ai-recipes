@@ -28,13 +28,13 @@ Extract the following information:
 - Name: The recipe title
 - Description: The EXACT description text as it appears in the source, typically found after the title and before ingredients. Copy this verbatim - do not paraphrase or summarize.
 - Servings: Number of servings or yield (e.g., "4 servings", "12 cookies", "1 9-inch pie")
-- Total_time: Total time including prep and cooking (e.g., "45 minutes", "1 hour 30 minutes")
+- Total_time: Total time ONLY if explicitly stated in the recipe (e.g., "45 minutes", "1 hour 30 minutes"). Do NOT calculate or infer this - only include if the source explicitly states total time. Leave as null if not provided.
 - Ingredients: List each ingredient with its quantity on a separate line
 - Directions: Step-by-step cooking instructions, each step on a new line
-- Notes: Any additional tips, variations, storage instructions, or important information
+- Notes: Any additional tips, variations, storage instructions, or important information (as an array, one note per item)
 - Source: The source of the recipe (if not provided, leave empty)
 
-Format your response as a valid JSON object with these exact keys: name, description, servings, total_time, ingredients (array), directions (array), notes, source.
+Format your response as a valid JSON object with these exact keys: name, description, servings, total_time, ingredients (array), directions (array), notes (array), source.
 
 Be thorough and accurate. If information is missing, use null for optional fields."""
 
@@ -65,10 +65,10 @@ Be thorough and accurate. If information is missing, use null for optional field
             # Check if response content exists
             if not response.choices or not response.choices[0].message.content:
                 raise ValueError("LLM returned empty response")
-            
+
             content = response.choices[0].message.content
             recipe_data = json.loads(content)
-            
+
             # Check if LLM detected no recipe
             if "error" in recipe_data:
                 raise ValueError(recipe_data["error"])
