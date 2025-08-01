@@ -9,6 +9,7 @@ from typing import List
 
 import streamlit as st
 from dotenv import load_dotenv
+from PIL import Image
 
 # Register HEIF/HEIC support if available
 try:
@@ -204,18 +205,22 @@ class StreamlitRecipeApp:
         """Handle batch image extraction."""
         st.header("📚 Batch Image Processing")
 
-        # Clear explanation of the two modes
+        # Clear explanation of the three modes
         st.info(
             """
-        **Two processing modes available:**
+        **Three processing modes available:**
 
         🔄 **Multiple Recipes Mode** - Each image contains a different recipe
         - Example: You have 5 photos from different cookbook pages, each showing a complete recipe
         - Result: 5 separate recipe files
 
-        📄 **Multi-Page Recipe Mode** - All images are parts of ONE recipe
+        📄 **Single Multi-Page Recipe Mode** - All images are parts of ONE recipe
         - Example: One recipe spans across 3 pages/photos
         - Result: 1 combined recipe file
+
+        📚 **Multiple Multi-Page Recipes Mode** - Group images into multiple recipes
+        - Example: Recipe 1 uses images 1-2, Recipe 2 uses images 3-5, Recipe 3 uses image 6
+        - Result: 3 separate recipe files from your groupings
         """
         )
 
@@ -231,18 +236,20 @@ class StreamlitRecipeApp:
 
             # Show preview of uploaded images
             with st.expander("👁️ Preview uploaded images", expanded=True):
-                cols = st.columns(min(len(uploaded_files), 4))
-                for i, file in enumerate(uploaded_files):
-                    with cols[i % 4]:
+                # Sort files by name for consistent ordering
+                sorted_files = sorted(
+                    enumerate(uploaded_files), key=lambda x: x[1].name
+                )
+                cols = st.columns(min(len(sorted_files), 4))
+                for idx, (original_idx, file) in enumerate(sorted_files):
+                    with cols[idx % 4]:
                         try:
                             # Reset file pointer and read the image
                             file.seek(0)
-                            from PIL import Image
-
                             img = Image.open(file)
                             st.image(
                                 img,
-                                caption=f"{i+1}. {file.name}",
+                                caption=f"{original_idx+1}. {file.name}",
                                 use_container_width=True,
                             )
                             file.seek(0)  # Reset for later use
@@ -256,11 +263,12 @@ class StreamlitRecipeApp:
             st.subheader("Choose Processing Mode")
             processing_mode = st.radio(
                 "How should these images be processed?",
-                ["single_recipe", "multiple_recipes"],
+                ["single_recipe", "multiple_recipes", "grouped_recipes"],
                 index=0,  # Default to single_recipe (multiple pages per one recipe)
                 format_func=lambda x: {
                     "multiple_recipes": "🔄 Multiple Recipes - Each image is a separate recipe",
                     "single_recipe": "📄 Single Multi-Page Recipe - All images are parts of ONE recipe",
+                    "grouped_recipes": "📚 Multiple Multi-Page Recipes - Group images into multiple recipes",
                 }[x],
                 help="Select how to process your uploaded images",
             )
@@ -270,19 +278,216 @@ class StreamlitRecipeApp:
                 st.info(
                     "✅ Each image will be processed as a separate recipe. Perfect for photographing multiple recipe cards or different pages from a cookbook."
                 )
-            else:
+            elif processing_mode == "single_recipe":
                 st.info(
                     "✅ All images will be combined into one recipe. Perfect when a single recipe spans multiple pages/photos."
                 )
+            else:  # grouped_recipes
+                st.info(
+                    "✅ Group your images into multiple recipes. Perfect when you have several multi-page recipes to process at once."
+                )
+
+                # Image grouping interface
+                st.subheader("Group Your Images")
+
+                # Initialize session state for groups if not exists
+                if "recipe_groups" not in st.session_state:
+                    st.session_state.recipe_groups = []
+
+                # Add new group button
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    if st.button("➕ Add Recipe Group", type="secondary"):
+                        st.session_state.recipe_groups.append([])
+
+                # Display existing groups
+                if st.session_state.recipe_groups:
+                    # First, show unassigned images
+                    all_assigned = []
+                    for group in st.session_state.recipe_groups:
+                        all_assigned.extend(group)
+                    assigned_set = set(all_assigned)
+
+                    unassigned = [
+                        i for i in range(len(uploaded_files)) if i not in assigned_set
+                    ]
+
+                    if unassigned:
+                        st.write("**Unassigned Images:**")
+                        cols = st.columns(min(len(unassigned), 4))
+                        for idx, img_idx in enumerate(unassigned):
+                            with cols[idx % 4]:
+                                st.write(
+                                    f"{img_idx + 1}. {uploaded_files[img_idx].name}"
+                                )
+
+                    # Display each group
+                    groups_to_remove = []
+
+                    # Use a form to handle multiselect updates better
+                    for group_idx in range(len(st.session_state.recipe_groups)):
+                        with st.expander(
+                            f"Recipe Group {group_idx + 1}", expanded=True
+                        ):
+                            # Calculate images assigned to OTHER groups
+                            other_assigned = set()
+                            for other_idx in range(len(st.session_state.recipe_groups)):
+                                if other_idx != group_idx:
+                                    other_assigned.update(
+                                        st.session_state.recipe_groups[other_idx]
+                                    )
+
+                            # Current group selections
+                            current_selections = st.session_state.recipe_groups[
+                                group_idx
+                            ]
+
+                            # Available = all images NOT in other groups
+                            available_indices = [
+                                i
+                                for i in range(len(uploaded_files))
+                                if i not in other_assigned
+                            ]
+
+                            # Sort available indices by filename
+                            available_indices.sort(key=lambda i: uploaded_files[i].name)
+
+                            # Show available images with thumbnails
+                            st.write("Select images for this recipe:")
+
+                            # Show current selections
+                            if current_selections:
+                                selected_names = [
+                                    f"{i+1}. {uploaded_files[i].name}"
+                                    for i in current_selections
+                                ]
+                                st.info(f"Selected: {', '.join(selected_names)}")
+
+                            # Create columns for image selection
+                            num_cols = 4
+                            rows_needed = (
+                                len(available_indices) + num_cols - 1
+                            ) // num_cols
+
+                            for row in range(rows_needed):
+                                cols = st.columns(num_cols)
+                                for col_idx in range(num_cols):
+                                    img_list_idx = row * num_cols + col_idx
+                                    if img_list_idx < len(available_indices):
+                                        img_idx = available_indices[img_list_idx]
+
+                                        with cols[col_idx]:
+                                            try:
+                                                file = uploaded_files[img_idx]
+                                                file.seek(0)
+                                                img = Image.open(file)
+
+                                                # Create a container for the image and selection state
+                                                is_selected = (
+                                                    img_idx in current_selections
+                                                )
+
+                                                # Show image with visual selection indicator
+                                                if is_selected:
+                                                    st.success(
+                                                        f"✓ {img_idx + 1}. {file.name}"
+                                                    )
+                                                else:
+                                                    st.caption(
+                                                        f"{img_idx + 1}. {file.name}"
+                                                    )
+
+                                                st.image(
+                                                    img,
+                                                    use_container_width=True,
+                                                )
+                                                file.seek(0)
+
+                                                # Toggle button
+                                                button_label = (
+                                                    "✓ Selected"
+                                                    if is_selected
+                                                    else "Select"
+                                                )
+                                                button_type = (
+                                                    "secondary"
+                                                    if is_selected
+                                                    else "primary"
+                                                )
+
+                                                if st.button(
+                                                    button_label,
+                                                    key=f"btn_group_{group_idx}_img_{img_idx}",
+                                                    type=button_type,
+                                                    use_container_width=True,
+                                                ):
+                                                    # Toggle selection
+                                                    if is_selected:
+                                                        st.session_state.recipe_groups[
+                                                            group_idx
+                                                        ].remove(img_idx)
+                                                    else:
+                                                        st.session_state.recipe_groups[
+                                                            group_idx
+                                                        ].append(img_idx)
+                                                    st.rerun()
+
+                                            except Exception as e:
+                                                st.error(f"Cannot preview: {str(e)}")
+
+                            # Remove group button
+                            if st.button(
+                                f"🗑️ Remove Group {group_idx + 1}",
+                                key=f"remove_{group_idx}",
+                            ):
+                                groups_to_remove.append(group_idx)
+
+                    # Remove marked groups
+                    for idx in reversed(groups_to_remove):
+                        st.session_state.recipe_groups.pop(idx)
+                        st.rerun()
+
+                    # Validate groups
+                    valid_groups = [g for g in st.session_state.recipe_groups if g]
+                    if not valid_groups:
+                        st.warning("Please add at least one recipe group with images.")
+
+                    # Add recipe group button at the bottom too
+                    st.markdown("---")
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        if st.button(
+                            "➕ Add Recipe Group",
+                            type="secondary",
+                            key="add_recipe_bottom",
+                        ):
+                            st.session_state.recipe_groups.append([])
+                            st.rerun()
+                else:
+                    st.info(
+                        "Click '➕ Add Recipe Group' to start grouping your images."
+                    )
 
             col1, col2 = st.columns([1, 3])
             with col1:
-                button_text = (
-                    "🚀 Extract Recipes"
-                    if processing_mode == "multiple_recipes"
-                    else "🚀 Combine & Extract"
+                if processing_mode == "multiple_recipes":
+                    button_text = "🚀 Extract Recipes"
+                elif processing_mode == "single_recipe":
+                    button_text = "🚀 Combine & Extract"
+                else:  # grouped_recipes
+                    button_text = "🚀 Extract Grouped Recipes"
+
+                # Disable button if in grouped mode and no valid groups
+                disabled = False
+                if processing_mode == "grouped_recipes":
+                    valid_groups = [
+                        g for g in st.session_state.get("recipe_groups", []) if g
+                    ]
+                    disabled = not valid_groups
+
+                extract_button = st.button(
+                    button_text, type="primary", disabled=disabled
                 )
-                extract_button = st.button(button_text, type="primary")
 
             if extract_button:
                 progress_bar = st.progress(0)
@@ -399,6 +604,104 @@ class StreamlitRecipeApp:
 
                     progress_bar.progress(1.0)
 
+                elif processing_mode == "grouped_recipes":
+                    # Process grouped recipes
+                    valid_groups = [g for g in st.session_state.recipe_groups if g]
+                    total_groups = len(valid_groups)
+
+                    for group_idx, image_indices in enumerate(valid_groups):
+                        status_text.text(
+                            f"Processing recipe group {group_idx + 1} of {total_groups}..."
+                        )
+                        base_progress = group_idx / total_groups
+
+                        try:
+                            # Get the files for this group
+                            group_files = [uploaded_files[idx] for idx in image_indices]
+
+                            # Save files temporarily
+                            temp_paths = []
+                            for file_idx, uploaded_file in enumerate(group_files):
+                                progress = base_progress + (
+                                    file_idx / len(group_files)
+                                ) * (0.3 / total_groups)
+                                progress_bar.progress(progress)
+
+                                with tempfile.NamedTemporaryFile(
+                                    delete=False, suffix=Path(uploaded_file.name).suffix
+                                ) as tmp_file:
+                                    tmp_file.write(uploaded_file.getvalue())
+                                    temp_paths.append(tmp_file.name)
+
+                            try:
+                                # Process images
+                                extractor = ImageExtractor()
+                                if len(temp_paths) > 1:
+                                    content = extractor.process_multiple_images(
+                                        temp_paths
+                                    )
+                                else:
+                                    content = extractor.process_image(temp_paths[0])
+
+                                # Extract recipe
+                                progress = base_progress + 0.5 / total_groups
+                                progress_bar.progress(progress)
+                                status_text.text(
+                                    f"Extracting recipe {group_idx + 1} of {total_groups}..."
+                                )
+
+                                llm_client = LLMClient(api_key=self.api_key)
+                                source_names = ", ".join([f.name for f in group_files])
+                                recipe = llm_client.extract_recipe(
+                                    content,
+                                    source=f"Group {group_idx + 1}: {source_names}",
+                                )
+
+                                # Save recipe
+                                formatter = RecipeFormatter()
+                                recipe_dir = formatter.save_recipe(recipe)
+
+                                # Extract images
+                                if len(temp_paths) > 1:
+                                    recipe_image_extractor = RecipeImageExtractor(
+                                        llm_client
+                                    )
+                                    image_metadata = (
+                                        recipe_image_extractor.extract_recipe_images(
+                                            temp_paths, recipe.name, recipe_dir
+                                        )
+                                    )
+
+                                    # Update recipe with image references
+                                    recipe.images = [
+                                        RecipeImage(
+                                            filename=img["filename"],
+                                            description=img.get("description", ""),
+                                            is_main=img.get("is_main", False),
+                                            is_step=img.get("is_step", False),
+                                        )
+                                        for img in image_metadata.get(
+                                            "extracted_images", []
+                                        )
+                                    ]
+
+                                    # Update saved files
+                                    formatter.update_recipe_files(recipe, recipe_dir)
+
+                                extracted_recipes.append(recipe)
+
+                            finally:
+                                # Clean up temp files
+                                for temp_path in temp_paths:
+                                    os.unlink(temp_path)
+
+                        except Exception as e:
+                            st.error(
+                                f"❌ Failed to extract recipe group {group_idx + 1}: {str(e)}"
+                            )
+
+                    progress_bar.progress(1.0)
+
                 else:
                     # Process each image as a separate recipe
                     for i, uploaded_file in enumerate(uploaded_files):
@@ -476,6 +779,10 @@ class StreamlitRecipeApp:
                         st.success(
                             f"🎉 Successfully combined {len(uploaded_files)} images into 1 recipe!"
                         )
+                    elif processing_mode == "grouped_recipes":
+                        st.success(
+                            f"🎉 Successfully extracted {len(extracted_recipes)} recipes from {len(valid_groups)} groups!"
+                        )
                     else:
                         st.success(
                             f"🎉 Successfully extracted {len(extracted_recipes)} recipe(s)!"
@@ -488,6 +795,20 @@ class StreamlitRecipeApp:
         # Display extracted recipes
         if st.session_state.extracted_recipes:
             self.display_batch_recipes(st.session_state.extracted_recipes)
+
+            # Reset button
+            st.markdown("---")
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button(
+                    "🔄 Start New Extraction", type="primary", use_container_width=True
+                ):
+                    # Clear the extracted recipes
+                    st.session_state.extracted_recipes = []
+                    # Clear recipe groups if they exist
+                    if "recipe_groups" in st.session_state:
+                        st.session_state.recipe_groups = []
+                    st.rerun()
 
     def web_url_tab(self):
         """Handle web URL extraction."""

@@ -580,7 +580,6 @@ Please identify:
 
                 # Get the original image size for cropping calculations
                 original_img = Image.open(image_path)
-                img_width, img_height = original_img.size
                 original_img.close()
 
                 # Detect image regions using LayoutParser or OpenCV
@@ -623,12 +622,32 @@ Please identify:
                         if len(detected_regions) == 1:
                             # If only one region detected, use it
                             best_region = detected_regions[0]
+                        elif len(detected_regions) == len(food_images):
+                            # If number of regions matches number of food images, use index matching
+                            # Assuming regions are detected in reading order (left-to-right, top-to-bottom)
+                            best_region = detected_regions[img_idx]
+                            print(f"  -> Using region {img_idx} for {filename}")
                         else:
-                            # Multiple regions - could match based on location description
-                            # For now, take the largest region
-                            best_region = max(
-                                detected_regions, key=lambda r: r["width"] * r["height"]
-                            )
+                            # Different number of regions vs food images
+                            # Try to match based on whether it's main or step photo
+                            if food_image.get("is_main_photo"):
+                                # Main photo is often the largest
+                                best_region = max(
+                                    detected_regions,
+                                    key=lambda r: r["width"] * r["height"],
+                                )
+                            else:
+                                # For step photos, try to use smaller regions
+                                # Sort by area and pick based on index
+                                sorted_regions = sorted(
+                                    detected_regions,
+                                    key=lambda r: r["width"] * r["height"],
+                                )
+                                # Use smaller regions for step photos
+                                if img_idx < len(sorted_regions):
+                                    best_region = sorted_regions[img_idx]
+                                else:
+                                    best_region = sorted_regions[0]
 
                         if best_region:
                             # Use the detected region for cropping
@@ -643,7 +662,7 @@ Please identify:
                             )
                             was_cropped = True
                             print(
-                                f"  -> Cropped image to region: x={crop_region[0]}, y={crop_region[1]}, w={crop_region[2]}, h={crop_region[3]}"
+                                f"  -> Cropped {filename} to region: x={crop_region[0]}, y={crop_region[1]}, w={crop_region[2]}, h={crop_region[3]}"
                             )
 
                     if not was_cropped:

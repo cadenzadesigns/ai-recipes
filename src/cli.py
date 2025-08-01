@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from typing import Dict, List
 
 import click
 from dotenv import load_dotenv
@@ -16,6 +18,109 @@ from .paprika_client import PaprikaClient
 
 # Load environment variables
 load_dotenv()
+
+
+def parse_manifest(manifest_path: str) -> List[List[str]]:
+    """Parse a manifest file that contains an array of image groups.
+
+    Expected format:
+    [
+        ["image1.jpg", "image2.jpg"],
+        ["image3.jpg", "image4.jpg", "image5.jpg"],
+        ["image6.jpg"]
+    ]
+    """
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+
+    # Validate manifest structure
+    if not isinstance(manifest, list):
+        raise ValueError("Manifest must be a JSON array of image groups")
+
+    for i, group in enumerate(manifest):
+        if not isinstance(group, list):
+            raise ValueError(f"Group {i} must be a list of image paths")
+        if not group:
+            raise ValueError(f"Group {i} has no images")
+
+    return manifest
+
+
+def interactive_group_images(image_paths: List[str]) -> Dict[str, List[str]]:
+    """Interactively group images into recipes."""
+    click.echo("\n=== Interactive Recipe Grouping ===")
+    click.echo(f"You have {len(image_paths)} images to group into recipes.\n")
+
+    # Show all images
+    for i, path in enumerate(image_paths, 1):
+        click.echo(f"{i}. {Path(path).name}")
+
+    recipes = {}
+    grouped_images = set()
+    recipe_count = 1
+
+    while len(grouped_images) < len(image_paths):
+        click.echo(f"\n--- Recipe {recipe_count} ---")
+        recipe_name = click.prompt("Recipe name", type=str)
+
+        # Show remaining images
+        remaining = [
+            i for i, path in enumerate(image_paths) if path not in grouped_images
+        ]
+        if not remaining:
+            break
+
+        click.echo("\nAvailable images:")
+        for idx in remaining:
+            click.echo(f"{idx + 1}. {Path(image_paths[idx]).name}")
+
+        # Get image selection
+        selection = click.prompt(
+            "Select images for this recipe (comma-separated numbers, e.g., 1,2,3)",
+            type=str,
+        )
+
+        try:
+            selected_indices = [int(x.strip()) - 1 for x in selection.split(",")]
+            selected_paths = []
+
+            for idx in selected_indices:
+                if idx < 0 or idx >= len(image_paths):
+                    click.echo(f"Invalid image number: {idx + 1}", err=True)
+                    continue
+                if image_paths[idx] in grouped_images:
+                    click.echo(
+                        f"Image {idx + 1} already assigned to another recipe", err=True
+                    )
+                    continue
+                selected_paths.append(image_paths[idx])
+                grouped_images.add(image_paths[idx])
+
+            if selected_paths:
+                recipes[recipe_name] = selected_paths
+                recipe_count += 1
+                click.echo(f"✓ Added {len(selected_paths)} images to '{recipe_name}'")
+
+        except (ValueError, IndexError) as e:
+            click.echo(f"Invalid selection: {e}", err=True)
+            continue
+
+        # Ask if more recipes
+        if len(grouped_images) < len(image_paths):
+            if not click.confirm("\nAdd another recipe?"):
+                # Group remaining images
+                remaining_paths = [p for p in image_paths if p not in grouped_images]
+                if remaining_paths:
+                    if click.confirm(
+                        f"\n{len(remaining_paths)} images remaining. Group them as one recipe?"
+                    ):
+                        recipe_name = click.prompt(
+                            "Recipe name for remaining images", type=str
+                        )
+                        recipes[recipe_name] = remaining_paths
+                break
+
+    return recipes
 
 
 @click.group()
@@ -41,12 +146,26 @@ def cli(ctx, api_key, model):
     help="Treat multiple images as one recipe (e.g., multi-page recipes)",
 )
 @click.option("--source", "-s", help="Source information for the recipes")
+@click.option(
+    "--manifest",
+    "-m",
+    type=click.Path(exists=True),
+    help="JSON file mapping images to recipes for multi-recipe batch processing",
+)
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    help="Interactively group images into recipes",
+)
 @click.pass_context
-def image(ctx, image_paths, output_dir, batch, source):
+def image(ctx, image_paths, output_dir, batch, source, manifest, interactive):
     """Extract recipes from one or more images.
 
     By default, each image is treated as a separate recipe.
     Use --batch to combine multiple images into a single recipe (e.g., for multi-page recipes).
+    Use --manifest with a JSON file to group multiple multi-page recipes.
+    Use --interactive to interactively group images into recipes.
     """
 
     llm_client = LLMClient(api_key=ctx.obj["api_key"], model=ctx.obj["model"])
@@ -55,67 +174,125 @@ def image(ctx, image_paths, output_dir, batch, source):
     recipe_image_extractor = RecipeImageExtractor(llm_client)
 
     recipes = []
+    recipe_groups = {}
 
-    # Group images by recipe (assume consecutive images are same recipe)
-    if len(image_paths) > 1 and batch:
-        click.echo(f"Processing {len(image_paths)} images as a single recipe...")
+    # Determine grouping mode
+    if manifest:
+        # Load groupings from manifest file
         try:
-            content = image_extractor.process_multiple_images(list(image_paths))
-            recipe = llm_client.extract_recipe(content, source)
-            recipes.append(recipe)
+            manifest_groups = parse_manifest(manifest)
+            # Convert relative paths in manifest to absolute paths matching input
+            image_path_map = {Path(p).name: p for p in image_paths}
+
+            for group_idx, image_names in enumerate(manifest_groups):
+                matched_paths = []
+                for img_name in image_names:
+                    if img_name in image_path_map:
+                        matched_paths.append(image_path_map[img_name])
+                    else:
+                        # Try absolute path
+                        if Path(img_name).exists():
+                            matched_paths.append(img_name)
+                        else:
+                            click.echo(
+                                f"⚠️  Image '{img_name}' not found for recipe group {group_idx + 1}",
+                                err=True,
+                            )
+
+                if matched_paths:
+                    # Use placeholder name that will be replaced by LLM
+                    recipe_groups[f"Recipe_{group_idx + 1}"] = matched_paths
+
+        except Exception as e:
+            click.echo(f"✗ Failed to parse manifest: {str(e)}", err=True)
+            return
+
+    elif interactive and len(image_paths) > 1:
+        # Interactive grouping
+        recipe_groups = interactive_group_images(list(image_paths))
+
+    elif len(image_paths) > 1 and batch:
+        # Single multi-page recipe
+        recipe_groups = {"Combined Recipe": list(image_paths)}
+
+    else:
+        # Each image is a separate recipe
+        recipe_groups = {f"Recipe_{i}": [path] for i, path in enumerate(image_paths, 1)}
+
+    # Process each recipe group
+    total_groups = len(recipe_groups)
+    for group_idx, (group_name, group_images) in enumerate(recipe_groups.items(), 1):
+        click.echo(f"\n[{group_idx}/{total_groups}] Processing recipe: {group_name}")
+        click.echo(f"  Images: {len(group_images)} files")
+
+        try:
+            if len(group_images) > 1:
+                # Multi-page recipe
+                content = image_extractor.process_multiple_images(group_images)
+            else:
+                # Single image
+                content = image_extractor.process_image(group_images[0])
+
+            # Extract recipe
+            recipe = llm_client.extract_recipe(content, source or group_name)
+
+            recipes.append((recipe, group_images))
             click.echo(f"✓ Extracted: {recipe.name}")
+
         except Exception as e:
             click.echo(f"✗ Failed to extract recipe: {str(e)}", err=True)
-    else:
-        # Process each image individually
-        for image_path in image_paths:
-            click.echo(f"Processing {image_path}...")
-            try:
-                content = image_extractor.process_image(image_path)
-                recipe = llm_client.extract_recipe(content, source or str(image_path))
-                recipes.append(recipe)
-                click.echo(f"✓ Extracted: {recipe.name}")
-            except Exception as e:
-                click.echo(f"✗ Failed to process {image_path}: {str(e)}", err=True)
 
     # Save recipes
     if recipes:
-        if batch and len(recipes) > 1:
-            output_path = formatter.save_recipes_batch(recipes)
-            click.echo(f"\nSaved {len(recipes)} recipes to: {output_path}")
-        else:
-            for recipe in recipes:
+        click.echo(f"\nSaving {len(recipes)} recipe(s)...")
+
+        for recipe, recipe_images in recipes:
+            try:
                 recipe_dir = formatter.save_recipe(recipe)
                 click.echo(f"Saved recipe to: {recipe_dir}")
 
-                # Always extract images
-                click.echo("Analyzing for recipe images...")
-                try:
-                    image_metadata = recipe_image_extractor.extract_recipe_images(
-                        list(image_paths), recipe.name, recipe_dir
-                    )
-
-                    # Update recipe with image references
-                    from .models import RecipeImage
-
-                    recipe.images = [
-                        RecipeImage(
-                            filename=img["filename"],
-                            description=img["description"],
-                            is_main=img["is_main"],
-                            is_step=img["is_step"],
+                # Extract images for this specific recipe
+                if recipe_images:
+                    click.echo("  Analyzing for recipe images...")
+                    try:
+                        image_metadata = recipe_image_extractor.extract_recipe_images(
+                            recipe_images, recipe.name, recipe_dir
                         )
-                        for img in image_metadata["extracted_images"]
-                    ]
 
-                    # Update existing files with image info
-                    formatter.update_recipe_files(recipe, recipe_dir)
+                        # Update recipe with image references
+                        from .models import RecipeImage
 
-                    click.echo(
-                        f"✓ Extracted {len(image_metadata['extracted_images'])} images"
-                    )
-                except Exception as e:
-                    click.echo(f"✗ Failed to extract images: {str(e)}", err=True)
+                        recipe.images = [
+                            RecipeImage(
+                                filename=img["filename"],
+                                description=img["description"],
+                                is_main=img["is_main"],
+                                is_step=img["is_step"],
+                            )
+                            for img in image_metadata["extracted_images"]
+                        ]
+
+                        # Update existing files with image info
+                        formatter.update_recipe_files(recipe, recipe_dir)
+
+                        click.echo(
+                            f"  ✓ Extracted {len(image_metadata['extracted_images'])} images"
+                        )
+                    except Exception as e:
+                        click.echo(f"  ✗ Failed to extract images: {str(e)}", err=True)
+
+            except Exception as e:
+                click.echo(
+                    f"✗ Failed to save recipe '{recipe.name}': {str(e)}", err=True
+                )
+
+        # Create summary
+        if len(recipes) > 1:
+            click.echo("\n=== Summary ===")
+            click.echo(f"Successfully processed {len(recipes)} recipes:")
+            for recipe, images in recipes:
+                click.echo(f"  • {recipe.name} ({len(images)} images)")
+
     else:
         click.echo("No recipes were successfully extracted.", err=True)
 
