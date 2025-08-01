@@ -681,26 +681,276 @@ class StreamlitRecipeApp:
                     if group_indices:
                         st.session_state.recipe_groups.append(group_indices)
 
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if processing_mode == "multiple_recipes":
-                    button_text = "🚀 Extract Recipes"
-                elif processing_mode == "single_recipe":
-                    button_text = "🚀 Combine & Extract"
-                else:  # grouped_recipes
-                    button_text = "🚀 Extract Grouped Recipes"
+            # Manual cropping option
+            st.markdown("---")
+            st.subheader("🖼️ Image Processing Options")
+            
+            manual_crop = st.checkbox(
+                "📐 Manual image cropping",
+                value=False,
+                help="Manually select the main image and additional images from each recipe using bounding boxes"
+            )
+            
+            if manual_crop:
+                st.info("✨ You'll manually select recipe images before text extraction using an interactive cropping interface.")
 
-                # Disable button if in grouped mode and no valid groups
-                disabled = False
+            # Initialize extract_button to avoid UnboundLocalError
+            extract_button = False
+            
+            # Determine the workflow based on manual cropping
+            if manual_crop and st.session_state.get("crop_step_completed", False) == False:
+                # Step 1: Manual Cropping (if enabled and not completed)
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    crop_button_text = "🖼️ Start Manual Cropping"
+                    
+                    # Disable button if in grouped mode and no valid groups
+                    disabled = False
+                    if processing_mode == "grouped_recipes":
+                        valid_groups = [
+                            g for g in st.session_state.get("recipe_groups", []) if g
+                        ]
+                        disabled = not valid_groups
+
+                    crop_button = st.button(
+                        crop_button_text, type="primary", disabled=disabled
+                    )
+                    
+                if crop_button:
+                    st.session_state.crop_step_active = True
+                    st.rerun()
+                    
+            else:
+                # Step 2: Extract Recipes (either manual crop completed or no manual crop)
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    if processing_mode == "multiple_recipes":
+                        button_text = "🚀 Extract Recipes"
+                    elif processing_mode == "single_recipe":
+                        button_text = "🚀 Combine & Extract"
+                    else:  # grouped_recipes
+                        button_text = "🚀 Extract Grouped Recipes"
+
+                    # Disable button if in grouped mode and no valid groups
+                    disabled = False
+                    if processing_mode == "grouped_recipes":
+                        valid_groups = [
+                            g for g in st.session_state.get("recipe_groups", []) if g
+                        ]
+                        disabled = not valid_groups
+
+                    extract_button = st.button(
+                        button_text, type="primary", disabled=disabled
+                    )
+
+            # Manual cropping interface (appears when crop_step_active is True)
+            if manual_crop and st.session_state.get("crop_step_active", False):
+                st.markdown("---")
+                st.subheader("🖼️ Manual Image Cropping")
+                
+                # Show which recipe groups we'll be cropping
                 if processing_mode == "grouped_recipes":
-                    valid_groups = [
-                        g for g in st.session_state.get("recipe_groups", []) if g
-                    ]
-                    disabled = not valid_groups
-
-                extract_button = st.button(
-                    button_text, type="primary", disabled=disabled
-                )
+                    valid_groups = [g for g in st.session_state.get("recipe_groups", []) if g]
+                    st.info(f"📚 You'll crop images for {len(valid_groups)} recipe groups.")
+                    
+                    # Initialize cropping state
+                    if "current_group_crop" not in st.session_state:
+                        st.session_state.current_group_crop = 0
+                    
+                    current_group = st.session_state.current_group_crop
+                    
+                    if current_group < len(valid_groups):
+                        group_indices = valid_groups[current_group]
+                        
+                        st.write(f"### Recipe Group {current_group + 1} of {len(valid_groups)}")
+                        st.write(f"**Images in this group:** {len(group_indices)}")
+                        
+                        # Show thumbnails of images in this group
+                        cols = st.columns(min(len(group_indices), 4))
+                        for i, img_idx in enumerate(group_indices):
+                            with cols[i % len(cols)]:
+                                st.image(uploaded_files[img_idx], caption=uploaded_files[img_idx].name, use_container_width=True)
+                        
+                        # Initialize current image cropping
+                        if "current_image_crop" not in st.session_state:
+                            st.session_state.current_image_crop = 0
+                            
+                        current_img_idx_in_group = st.session_state.current_image_crop
+                        
+                        if current_img_idx_in_group < len(group_indices):
+                            img_idx = group_indices[current_img_idx_in_group]
+                            uploaded_file = uploaded_files[img_idx]
+                            
+                            st.write(f"#### Cropping Image {current_img_idx_in_group + 1} of {len(group_indices)}: {uploaded_file.name}")
+                            
+                            # Load and display the image for cropping
+                            image = Image.open(uploaded_file)
+                            cropper = StreamlitImageCropper()
+                            
+                            # Use a unique key for each image
+                            image_key = f"group_{current_group}_img_{current_img_idx_in_group}"
+                            crops = cropper.crop_single_image_canvas(image, image_key, max_crops=5)
+                            
+                            # Check if the user clicked "Done with Page"
+                            if st.session_state.get(f"{image_key}_page_complete", False):
+                                # Clear the done flag
+                                st.session_state[f"{image_key}_page_complete"] = False
+                                # Navigate to next image or group
+                                if current_img_idx_in_group < len(group_indices) - 1:
+                                    st.session_state.current_image_crop += 1
+                                    st.rerun()
+                                else:
+                                    if current_group < len(valid_groups) - 1:
+                                        st.session_state.current_group_crop += 1
+                                        st.session_state.current_image_crop = 0
+                                        st.rerun()
+                                    else:
+                                        st.session_state.crop_step_completed = True
+                                        st.session_state.crop_step_active = False
+                                        st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                        st.rerun()
+                            
+                            # Navigation buttons
+                            col1, col2, col3 = st.columns([1, 1, 1])
+                            
+                            with col1:
+                                if current_img_idx_in_group > 0:
+                                    if st.button("⬅️ Previous Image"):
+                                        st.session_state.current_image_crop -= 1
+                                        st.rerun()
+                            
+                            with col2:
+                                # Always allow navigation, don't require crops
+                                if current_img_idx_in_group < len(group_indices) - 1:
+                                    if st.button("Next Image ➡️"):
+                                        st.session_state.current_image_crop += 1
+                                        st.rerun()
+                                else:
+                                    if current_group < len(valid_groups) - 1:
+                                        if st.button("Next Recipe Group ➡️"):
+                                            st.session_state.current_group_crop += 1
+                                            st.session_state.current_image_crop = 0
+                                            st.rerun()
+                                    else:
+                                        if st.button("✅ Finish Cropping", type="primary"):
+                                            st.session_state.crop_step_completed = True
+                                            st.session_state.crop_step_active = False
+                                            st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                            st.rerun()
+                            
+                            with col3:
+                                if st.button("⏭️ Skip This Image"):
+                                    if current_img_idx_in_group < len(group_indices) - 1:
+                                        st.session_state.current_image_crop += 1
+                                        st.rerun()
+                                    else:
+                                        if current_group < len(valid_groups) - 1:
+                                            st.session_state.current_group_crop += 1
+                                            st.session_state.current_image_crop = 0
+                                            st.rerun()
+                                        else:
+                                            st.session_state.crop_step_completed = True
+                                            st.session_state.crop_step_active = False
+                                            st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                            st.rerun()
+                                            
+                elif processing_mode == "single_recipe":
+                    st.info("📄 You'll crop images for 1 combined recipe.")
+                    # Handle single recipe cropping
+                    if "current_image_crop" not in st.session_state:
+                        st.session_state.current_image_crop = 0
+                        
+                    current_img_idx = st.session_state.current_image_crop
+                    
+                    if current_img_idx < len(uploaded_files):
+                        uploaded_file = uploaded_files[current_img_idx]
+                        st.write(f"#### Cropping Image {current_img_idx + 1} of {len(uploaded_files)}: {uploaded_file.name}")
+                        
+                        image = Image.open(uploaded_file)
+                        cropper = StreamlitImageCropper()
+                        image_key = f"single_img_{current_img_idx}"
+                        crops = cropper.crop_single_image_canvas(image, image_key, max_crops=5)
+                        
+                        # Navigation buttons
+                        col1, col2, col3 = st.columns([1, 1, 1])
+                        
+                        with col1:
+                            if current_img_idx > 0:
+                                if st.button("⬅️ Previous Image"):
+                                    st.session_state.current_image_crop -= 1
+                                    st.rerun()
+                        
+                        with col2:
+                            if current_img_idx < len(uploaded_files) - 1:
+                                if st.button("Next Image ➡️"):
+                                    st.session_state.current_image_crop += 1
+                                    st.rerun()
+                            else:
+                                if st.button("✅ Finish Cropping", type="primary"):
+                                    st.session_state.crop_step_completed = True
+                                    st.session_state.crop_step_active = False
+                                    st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                    st.rerun()
+                        
+                        with col3:
+                            if st.button("⏭️ Skip This Image"):
+                                if current_img_idx < len(uploaded_files) - 1:
+                                    st.session_state.current_image_crop += 1
+                                    st.rerun()
+                                else:
+                                    st.session_state.crop_step_completed = True
+                                    st.session_state.crop_step_active = False
+                                    st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                    st.rerun()
+                    
+                else:  # multiple_recipes
+                    st.info("🔄 You'll crop images for each individual recipe.")
+                    # Handle multiple recipes cropping (similar to single recipe)
+                    if "current_image_crop" not in st.session_state:
+                        st.session_state.current_image_crop = 0
+                        
+                    current_img_idx = st.session_state.current_image_crop
+                    
+                    if current_img_idx < len(uploaded_files):
+                        uploaded_file = uploaded_files[current_img_idx]
+                        st.write(f"#### Cropping Recipe {current_img_idx + 1} of {len(uploaded_files)}: {uploaded_file.name}")
+                        
+                        image = Image.open(uploaded_file)
+                        cropper = StreamlitImageCropper()
+                        image_key = f"multi_img_{current_img_idx}"
+                        crops = cropper.crop_single_image_canvas(image, image_key, max_crops=5)
+                        
+                        # Navigation buttons
+                        col1, col2, col3 = st.columns([1, 1, 1])
+                        
+                        with col1:
+                            if current_img_idx > 0:
+                                if st.button("⬅️ Previous Recipe"):
+                                    st.session_state.current_image_crop -= 1
+                                    st.rerun()
+                        
+                        with col2:
+                            if current_img_idx < len(uploaded_files) - 1:
+                                if st.button("Next Recipe ➡️"):
+                                    st.session_state.current_image_crop += 1
+                                    st.rerun()
+                            else:
+                                if st.button("✅ Finish Cropping", type="primary"):
+                                    st.session_state.crop_step_completed = True
+                                    st.session_state.crop_step_active = False
+                                    st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                    st.rerun()
+                        
+                        with col3:
+                            if st.button("⏭️ Skip This Recipe"):
+                                if current_img_idx < len(uploaded_files) - 1:
+                                    st.session_state.current_image_crop += 1
+                                    st.rerun()
+                                else:
+                                    st.session_state.crop_step_completed = True
+                                    st.session_state.crop_step_active = False
+                                    st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                    st.rerun()
 
             if extract_button:
                 progress_bar = st.progress(0)
@@ -776,17 +1026,55 @@ class StreamlitRecipeApp:
                                     progress_bar.progress(progress)
                                     status_text.text(message)
 
-                                recipe_image_extractor = RecipeImageExtractor(
-                                    llm_client
-                                )
-                                image_metadata = (
-                                    recipe_image_extractor.extract_recipe_images(
-                                        temp_paths,
-                                        recipe.name,
-                                        recipe_dir,
-                                        progress_callback=extraction_progress_callback,
+                                if manual_crop:
+                                    # Use pre-cropped images from the manual cropping step
+                                    status_text.text("Using manually cropped images...")
+                                    progress_bar.progress(0.8)
+                                    
+                                    extracted_images = []
+                                    
+                                    # Retrieve cropped images from session state
+                                    for i, temp_path in enumerate(temp_paths):
+                                        image_key = f"single_img_{i}"
+                                        
+                                        if image_key in st.session_state.crop_regions:
+                                            crops = st.session_state.crop_regions[image_key]
+                                            
+                                            for j, crop_info in enumerate(crops):
+                                                if crop_info.get('cropped_image'):
+                                                    # Save the cropped image
+                                                    cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}.png"
+                                                    cropped_path = os.path.join(recipe_dir, "images", cropped_filename)
+                                                    
+                                                    # Ensure images directory exists
+                                                    os.makedirs(os.path.dirname(cropped_path), exist_ok=True)
+                                                    
+                                                    # Save the pre-cropped image
+                                                    crop_info['cropped_image'].save(cropped_path)
+                                                    
+                                                    extracted_images.append({
+                                                        "filename": cropped_filename,
+                                                        "description": crop_info.get('description', ''),
+                                                        "is_main": crop_info.get('is_main', len(extracted_images) == 0),
+                                                        "is_step": not crop_info.get('is_main', len(extracted_images) == 0),
+                                                    })
+                                    
+                                    # Create metadata
+                                    image_metadata = {"extracted_images": extracted_images}
+                                    
+                                else:
+                                    # Use automatic image extraction
+                                    recipe_image_extractor = RecipeImageExtractor(
+                                        llm_client
                                     )
-                                )
+                                    image_metadata = (
+                                        recipe_image_extractor.extract_recipe_images(
+                                            temp_paths,
+                                            recipe.name,
+                                            recipe_dir,
+                                            progress_callback=extraction_progress_callback,
+                                        )
+                                    )
                                 progress_bar.progress(0.95)
 
                                 # Update recipe with image references
@@ -876,14 +1164,47 @@ class StreamlitRecipeApp:
 
                                 # Extract images
                                 if len(temp_paths) > 1:
-                                    recipe_image_extractor = RecipeImageExtractor(
-                                        llm_client
-                                    )
-                                    image_metadata = (
-                                        recipe_image_extractor.extract_recipe_images(
-                                            temp_paths, recipe.name, recipe_dir
+                                    if manual_crop:
+                                        # Use pre-cropped images from the manual cropping step
+                                        extracted_images = []
+                                        
+                                        # Get the images for this group from the original image indices
+                                        for relative_idx, img_idx in enumerate(image_indices):
+                                            image_key = f"group_{group_idx}_img_{relative_idx}"
+                                            
+                                            if image_key in st.session_state.crop_regions:
+                                                crops = st.session_state.crop_regions[image_key]
+                                                
+                                                for j, crop_info in enumerate(crops):
+                                                    if crop_info.get('cropped_image'):
+                                                        # Save the cropped image
+                                                        cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}.png"
+                                                        cropped_path = os.path.join(recipe_dir, "images", cropped_filename)
+                                                        
+                                                        # Ensure images directory exists
+                                                        os.makedirs(os.path.dirname(cropped_path), exist_ok=True)
+                                                        
+                                                        # Save the pre-cropped image
+                                                        crop_info['cropped_image'].save(cropped_path)
+                                                        
+                                                        extracted_images.append({
+                                                            "filename": cropped_filename,
+                                                            "description": crop_info.get('description', ''),
+                                                            "is_main": crop_info.get('is_main', len(extracted_images) == 0),
+                                                            "is_step": not crop_info.get('is_main', len(extracted_images) == 0),
+                                                        })
+                                        
+                                        image_metadata = {"extracted_images": extracted_images}
+                                    else:
+                                        # Automatic image extraction
+                                        recipe_image_extractor = RecipeImageExtractor(
+                                            llm_client
                                         )
-                                    )
+                                        image_metadata = (
+                                            recipe_image_extractor.extract_recipe_images(
+                                                temp_paths, recipe.name, recipe_dir
+                                            )
+                                        )
 
                                     # Update recipe with image references
                                     recipe.images = [
@@ -945,14 +1266,45 @@ class StreamlitRecipeApp:
                                 recipe_dir = formatter.save_recipe(recipe)
 
                                 # Extract recipe images
-                                recipe_image_extractor = RecipeImageExtractor(
-                                    llm_client
-                                )
-                                image_metadata = (
-                                    recipe_image_extractor.extract_recipe_images(
-                                        [tmp_file_path], recipe.name, recipe_dir
+                                if manual_crop:
+                                    # Use pre-cropped images from the manual cropping step
+                                    extracted_images = []
+                                    
+                                    image_key = f"multi_img_{i}"
+                                    
+                                    if image_key in st.session_state.crop_regions:
+                                        crops = st.session_state.crop_regions[image_key]
+                                        
+                                        for j, crop_info in enumerate(crops):
+                                            if crop_info.get('cropped_image'):
+                                                # Save the cropped image
+                                                cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}.png"
+                                                cropped_path = os.path.join(recipe_dir, "images", cropped_filename)
+                                                
+                                                # Ensure images directory exists
+                                                os.makedirs(os.path.dirname(cropped_path), exist_ok=True)
+                                                
+                                                # Save the pre-cropped image
+                                                crop_info['cropped_image'].save(cropped_path)
+                                                
+                                                extracted_images.append({
+                                                    "filename": cropped_filename,
+                                                    "description": crop_info.get('description', ''),
+                                                    "is_main": crop_info.get('is_main', len(extracted_images) == 0),
+                                                    "is_step": not crop_info.get('is_main', len(extracted_images) == 0),
+                                                })
+                                    
+                                    image_metadata = {"extracted_images": extracted_images}
+                                else:
+                                    # Automatic image extraction
+                                    recipe_image_extractor = RecipeImageExtractor(
+                                        llm_client
                                     )
-                                )
+                                    image_metadata = (
+                                        recipe_image_extractor.extract_recipe_images(
+                                            [tmp_file_path], recipe.name, recipe_dir
+                                        )
+                                    )
 
                                 # Update recipe with image references
                                 recipe.images = [

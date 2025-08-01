@@ -29,87 +29,189 @@ class StreamlitImageCropper:
     def crop_single_image_canvas(
         self, image: Image.Image, image_key: str, max_crops: int = 5
     ) -> List[Dict]:
-        """Manual cropping interface using canvas and coordinate inputs."""
-        st.write("### Draw Crop Regions")
+        """Interactive cropping interface using streamlit-cropper with thumbnails."""
+        from streamlit_cropper import st_cropper
+        
+        st.write("### Select Recipe Images")
+        
+        # Description
+        st.info("🖱️ Click and drag to draw rectangles around recipe images. You can crop multiple regions from the same page.")
 
         # Initialize crop regions for this image if not exists
         if image_key not in st.session_state.crop_regions:
             st.session_state.crop_regions[image_key] = []
 
-        # Display image with existing crop regions
-        display_img = image.copy()
-        draw = ImageDraw.Draw(display_img)
+        # Initialize current crop index if not exists
+        crop_key = f"{image_key}_crop_index"
+        if crop_key not in st.session_state:
+            st.session_state[crop_key] = 0
 
-        # Draw existing regions
-        for i, region in enumerate(st.session_state.crop_regions[image_key]):
-            x1, y1, x2, y2 = region["x1"], region["y1"], region["x2"], region["y2"]
-            draw.rectangle([x1, y1, x2, y2], outline="green", width=3)
-            draw.text((x1 + 5, y1 + 5), f"Image {i+1}", fill="green")
-
-        # Display the image
-        st.image(display_img, use_column_width=True)
-
-        # Manual coordinate input
-        col1, col2 = st.columns(2)
-
+        current_crop_index = st.session_state[crop_key]
+        
+        # Show current progress
+        if st.session_state.crop_regions[image_key]:
+            st.success(f"✅ {len(st.session_state.crop_regions[image_key])} image(s) selected")
+        
+        # Create thumbnail for cropping while keeping original for final crop
+        original_image = image
+        thumbnail_max_size = 800  # Max width or height for thumbnail
+        
+        # Calculate thumbnail size maintaining aspect ratio
+        if image.width > thumbnail_max_size or image.height > thumbnail_max_size:
+            if image.width > image.height:
+                new_width = thumbnail_max_size
+                new_height = int((image.height * thumbnail_max_size) / image.width)
+            else:
+                new_height = thumbnail_max_size
+                new_width = int((image.width * thumbnail_max_size) / image.height)
+            
+            thumbnail = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            scale_x = image.width / new_width
+            scale_y = image.height / new_height
+        else:
+            thumbnail = image
+            scale_x = 1.0
+            scale_y = 1.0
+        
+        # Show image dimensions
+        st.caption(f"📏 Original: {original_image.width}×{original_image.height}px | Thumbnail: {thumbnail.width}×{thumbnail.height}px")
+        
+        # Main cropping interface
+        col1, col2 = st.columns([3, 1])
+        
         with col1:
-            st.write("#### Add New Crop Region")
-            x1 = st.number_input(
-                "X1 (left)",
-                min_value=0,
-                max_value=image.width,
-                value=0,
-                key=f"{image_key}_x1",
+            st.write(f"#### Crop Region {current_crop_index + 1}")
+            
+            # Interactive cropper on thumbnail
+            cropped_img = st_cropper(
+                thumbnail,
+                realtime_update=False,  # Only update when crop is changed, not on every mouse move
+                box_color="green",
+                aspect_ratio=None,  # Free aspect ratio
+                key=f"{image_key}_cropper_{current_crop_index}",
+                return_type="both"  # Return both image and coordinates
             )
-            y1 = st.number_input(
-                "Y1 (top)",
-                min_value=0,
-                max_value=image.height,
-                value=0,
-                key=f"{image_key}_y1",
-            )
-            x2 = st.number_input(
-                "X2 (right)",
-                min_value=0,
-                max_value=image.width,
-                value=image.width,
-                key=f"{image_key}_x2",
-            )
-            y2 = st.number_input(
-                "Y2 (bottom)",
-                min_value=0,
-                max_value=image.height,
-                value=image.height,
-                key=f"{image_key}_y2",
-            )
-
-            if st.button("Add Region", key=f"{image_key}_add"):
-                if x2 > x1 and y2 > y1:
-                    new_region = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
-                    st.session_state.crop_regions[image_key].append(new_region)
-                    st.rerun()
-                else:
-                    st.error("Invalid region: X2 must be > X1 and Y2 must be > Y1")
+            
+            # Image type selection
+            col_a, col_b = st.columns(2)
+            with col_a:
+                is_main = st.radio(
+                    "Image type:",
+                    ["Main recipe image", "Step/side image"],
+                    key=f"{image_key}_type_{current_crop_index}",
+                    index=0 if len(st.session_state.crop_regions[image_key]) == 0 else 1
+                )
+            
+            with col_b:
+                description = st.text_input(
+                    "Description (optional):",
+                    placeholder="e.g., 'Final dish', 'Step 3'",
+                    key=f"{image_key}_desc_{current_crop_index}"
+                )
 
         with col2:
-            st.write("#### Current Regions")
+            st.write("#### Actions")
+            
+            # Add cropped region
+            if st.button("✅ Save This Crop", key=f"{image_key}_save", type="primary"):
+                # Check if we have a valid crop region
+                crop_valid = False
+                rect = None
+                cropped_thumbnail = None
+                
+                if cropped_img is not None:
+                    # Handle tuple format (image, rect)
+                    if isinstance(cropped_img, tuple) and len(cropped_img) == 2:
+                        cropped_thumbnail, rect = cropped_img
+                        if rect and rect.get('width', 0) > 0 and rect.get('height', 0) > 0:
+                            crop_valid = True
+                    # Handle object format with attributes
+                    elif hasattr(cropped_img, 'img') and cropped_img.img is not None:
+                        cropped_thumbnail = cropped_img.img
+                        rect = cropped_img.rect
+                        crop_valid = True
+                    elif hasattr(cropped_img, 'rect') and cropped_img.rect:
+                        rect = cropped_img.rect
+                        if rect.get('width', 0) > 0 and rect.get('height', 0) > 0:
+                            crop_valid = True
+                
+                if crop_valid:
+                    # Scale coordinates back to original image size
+                    scaled_coords = {
+                        "x1": int(rect['left'] * scale_x),
+                        "y1": int(rect['top'] * scale_y),
+                        "x2": int((rect['left'] + rect['width']) * scale_x),
+                        "y2": int((rect['top'] + rect['height']) * scale_y)
+                    }
+                    
+                    # Ensure coordinates are within image bounds
+                    scaled_coords['x1'] = max(0, min(scaled_coords['x1'], original_image.width))
+                    scaled_coords['y1'] = max(0, min(scaled_coords['y1'], original_image.height))
+                    scaled_coords['x2'] = max(0, min(scaled_coords['x2'], original_image.width))
+                    scaled_coords['y2'] = max(0, min(scaled_coords['y2'], original_image.height))
+                    
+                    # Crop from the original full-size image using scaled coordinates
+                    original_cropped = original_image.crop((
+                        scaled_coords['x1'], 
+                        scaled_coords['y1'], 
+                        scaled_coords['x2'], 
+                        scaled_coords['y2']
+                    ))
+                    
+                    crop_data = {
+                        "coordinates": scaled_coords,
+                        "cropped_image": original_cropped,  # Use crop from original image
+                        "is_main": is_main == "Main recipe image",
+                        "description": description or ("Main recipe image" if is_main == "Main recipe image" else "Recipe step image")
+                    }
+                    
+                    st.session_state.crop_regions[image_key].append(crop_data)
+                    
+                    # Increment crop index for next crop
+                    st.session_state[crop_key] = current_crop_index + 1
+                    
+                    st.success("✅ Crop saved!")
+                    st.rerun()
+                else:
+                    st.error("❌ Please draw a crop region first - click and drag on the image to select an area")
+            
+            # Show current crops
+            st.write("#### Saved Crops")
             if st.session_state.crop_regions[image_key]:
-                for i, region in enumerate(st.session_state.crop_regions[image_key]):
-                    col_a, col_b = st.columns([3, 1])
+                for i, crop in enumerate(st.session_state.crop_regions[image_key]):
+                    col_a, col_b = st.columns([2, 1])
                     with col_a:
-                        st.text(
-                            f"Region {i+1}: ({region['x1']}, {region['y1']}) to ({region['x2']}, {region['y2']})"
-                        )
+                        icon = "🏠" if crop.get("is_main") else "📝"
+                        st.text(f"{icon} Crop {i+1}")
+                        if crop.get("description"):
+                            st.caption(crop["description"])
                     with col_b:
-                        if st.button("Remove", key=f"{image_key}_remove_{i}"):
+                        if st.button("🗑️", key=f"{image_key}_remove_{i}", help="Remove this crop"):
                             st.session_state.crop_regions[image_key].pop(i)
+                            # Reset crop index if we removed crops
+                            if st.session_state[crop_key] > len(st.session_state.crop_regions[image_key]):
+                                st.session_state[crop_key] = len(st.session_state.crop_regions[image_key])
                             st.rerun()
             else:
-                st.info("No regions defined yet")
-
-            if st.button("Clear All", key=f"{image_key}_clear"):
+                st.info("No crops saved yet")
+            
+            # Clear all button
+            if st.session_state.crop_regions[image_key] and st.button("🗑️ Clear All", key=f"{image_key}_clear_all"):
                 st.session_state.crop_regions[image_key] = []
+                st.session_state[crop_key] = 0
                 st.rerun()
+            
+            # Finish button
+            if st.session_state.crop_regions[image_key]:
+                # Create a callback to set the done flag
+                def mark_page_done():
+                    st.session_state[f"{image_key}_page_complete"] = True
+                
+                if st.button("✅ Done with Page", 
+                           key=f"{image_key}_done", 
+                           type="secondary",
+                           on_click=mark_page_done):
+                    st.success(f"✅ Finished cropping {len(st.session_state.crop_regions[image_key])} images from this page!")
 
         return st.session_state.crop_regions[image_key]
 

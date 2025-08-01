@@ -52,7 +52,7 @@ def display_recipe(
                 st.image(
                     str(image_path),
                     caption=main_images[0].description,
-                    use_column_width=True,
+                    use_container_width=True,
                 )
 
     # Ingredients section

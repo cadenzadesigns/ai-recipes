@@ -253,7 +253,7 @@ def display_image_grid(uploaded_files: List) -> None:
                     # Reset file pointer for later use
                     file.seek(0)
 
-                    st.image(thumbnail, caption=file.name, use_column_width=True)
+                    st.image(thumbnail, caption=file.name, use_container_width=True)
 
                     # Show file info
                     st.caption(f"📏 {image.size[0]}×{image.size[1]}")
