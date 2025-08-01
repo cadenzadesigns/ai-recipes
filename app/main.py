@@ -741,7 +741,7 @@ class StreamlitRecipeApp:
                     # Initialize crop_regions if not exists
                     if "crop_regions" not in st.session_state:
                         st.session_state.crop_regions = {}
-                    
+
                     # Calculate overall progress
                     total_crops = 0
                     recipes_with_crops = 0
@@ -749,18 +749,26 @@ class StreamlitRecipeApp:
                         recipe_has_crops = False
                         for img_idx_in_group, img_idx in enumerate(valid_groups[i]):
                             image_key = f"group_{i}_img_{img_idx_in_group}"
-                            if image_key in st.session_state.crop_regions and st.session_state.crop_regions[image_key]:
-                                total_crops += len(st.session_state.crop_regions[image_key])
+                            if (
+                                image_key in st.session_state.crop_regions
+                                and st.session_state.crop_regions[image_key]
+                            ):
+                                total_crops += len(
+                                    st.session_state.crop_regions[image_key]
+                                )
                                 recipe_has_crops = True
                         if recipe_has_crops:
                             recipes_with_crops += 1
-                    
+
                     # Show progress summary
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric("Total Recipes", len(valid_groups))
                     with col2:
-                        st.metric("Recipes with Crops", f"{recipes_with_crops}/{len(valid_groups)}")
+                        st.metric(
+                            "Recipes with Crops",
+                            f"{recipes_with_crops}/{len(valid_groups)}",
+                        )
                     with col3:
                         st.metric("Total Images Cropped", total_crops)
 
@@ -769,11 +777,13 @@ class StreamlitRecipeApp:
                         st.session_state.current_group_crop = 0
 
                     current_group = st.session_state.current_group_crop
-                    
+
                     # Recipe navigation header
                     st.markdown("### 📚 Recipe Navigation")
-                    nav_cols = st.columns(len(valid_groups) if len(valid_groups) <= 5 else 5)
-                    
+                    nav_cols = st.columns(
+                        len(valid_groups) if len(valid_groups) <= 5 else 5
+                    )
+
                     # Show navigation buttons for all recipe groups
                     for i in range(len(valid_groups)):
                         col_idx = i % len(nav_cols)
@@ -783,10 +793,15 @@ class StreamlitRecipeApp:
                             group_crop_count = 0
                             for img_idx_in_group, img_idx in enumerate(valid_groups[i]):
                                 image_key = f"group_{i}_img_{img_idx_in_group}"
-                                if image_key in st.session_state.crop_regions and st.session_state.crop_regions[image_key]:
+                                if (
+                                    image_key in st.session_state.crop_regions
+                                    and st.session_state.crop_regions[image_key]
+                                ):
                                     has_crops = True
-                                    group_crop_count += len(st.session_state.crop_regions[image_key])
-                            
+                                    group_crop_count += len(
+                                        st.session_state.crop_regions[image_key]
+                                    )
+
                             # Create button label with status
                             if has_crops:
                                 button_label = f"✅ Recipe {i + 1} ({group_crop_count})"
@@ -794,26 +809,26 @@ class StreamlitRecipeApp:
                             else:
                                 button_label = f"📖 Recipe {i + 1}"
                                 button_help = f"Recipe {i + 1} - No crops yet"
-                            
+
                             if i == current_group:
                                 st.button(
                                     button_label,
                                     type="primary",
                                     disabled=True,
                                     use_container_width=True,
-                                    help="Current recipe"
+                                    help="Current recipe",
                                 )
                             else:
                                 if st.button(
                                     button_label,
                                     type="secondary",
                                     use_container_width=True,
-                                    help=button_help
+                                    help=button_help,
                                 ):
                                     st.session_state.current_group_crop = i
                                     st.session_state.current_image_crop = 0
                                     st.rerun()
-                    
+
                     st.markdown("---")
 
                     if current_group < len(valid_groups):
@@ -824,15 +839,81 @@ class StreamlitRecipeApp:
                         )
                         st.write(f"**Images in this group:** {len(group_indices)}")
 
-                        # Show thumbnails of images in this group
+                        # Show clickable thumbnails of images in this group
+                        st.write("**Click any image to jump to it:**")
                         cols = st.columns(min(len(group_indices), 4))
                         for i, img_idx in enumerate(group_indices):
                             with cols[i % len(cols)]:
-                                st.image(
-                                    uploaded_files[img_idx],
-                                    caption=uploaded_files[img_idx].name,
+                                # Create a unique button key for each image
+                                button_key = f"jump_to_img_{current_group}_{i}"
+                                
+                                # Make the button clickable
+                                if st.button(
+                                    f"📷 Image {i + 1}",
+                                    key=button_key,
                                     use_container_width=True,
-                                )
+                                    type="primary" if i == st.session_state.get("current_image_crop", 0) else "secondary"
+                                ):
+                                    st.session_state.current_image_crop = i
+                                    st.rerun()
+                                
+                                # Show the thumbnail with border styling
+                                uploaded_files[img_idx].seek(0)
+                                img = Image.open(uploaded_files[img_idx])
+                                
+                                # Convert image to base64 for inline display with border
+                                buffered = BytesIO()
+                                img.thumbnail((300, 300), Image.Resampling.LANCZOS)
+                                img.save(buffered, format="PNG")
+                                img_str = base64.b64encode(buffered.getvalue()).decode()
+                                
+                                # Display image with appropriate border
+                                if i == st.session_state.get("current_image_crop", 0):
+                                    # Highlight current image with blue border
+                                    st.markdown(
+                                        f"""
+                                        <div style="
+                                            border: 4px solid #1f77b4;
+                                            border-radius: 8px;
+                                            padding: 4px;
+                                            background-color: white;
+                                            margin-top: 8px;
+                                        ">
+                                            <img src="data:image/png;base64,{img_str}" style="
+                                                width: 100%;
+                                                border-radius: 4px;
+                                                display: block;
+                                            ">
+                                            <p style="text-align: center; margin: 4px 0 0 0; font-size: 12px;">
+                                                {i+1}. {uploaded_files[img_idx].name[:20]}{'...' if len(uploaded_files[img_idx].name) > 20 else ''}
+                                            </p>
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True
+                                    )
+                                else:
+                                    # Regular image with gray border
+                                    st.markdown(
+                                        f"""
+                                        <div style="
+                                            border: 2px solid #e0e0e0;
+                                            border-radius: 8px;
+                                            padding: 4px;
+                                            background-color: white;
+                                            margin-top: 8px;
+                                        ">
+                                            <img src="data:image/png;base64,{img_str}" style="
+                                                width: 100%;
+                                                border-radius: 4px;
+                                                display: block;
+                                            ">
+                                            <p style="text-align: center; margin: 4px 0 0 0; font-size: 12px;">
+                                                {i+1}. {uploaded_files[img_idx].name[:20]}{'...' if len(uploaded_files[img_idx].name) > 20 else ''}
+                                            </p>
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True
+                                    )
 
                         # Initialize current image cropping
                         if "current_image_crop" not in st.session_state:
@@ -844,9 +925,18 @@ class StreamlitRecipeApp:
                             img_idx = group_indices[current_img_idx_in_group]
                             uploaded_file = uploaded_files[img_idx]
 
+                            # Show current position with navigation dots
+                            nav_indicators = []
+                            for idx in range(len(group_indices)):
+                                if idx == current_img_idx_in_group:
+                                    nav_indicators.append("🔵")
+                                else:
+                                    nav_indicators.append("⚪")
+                            
                             st.write(
                                 f"#### Cropping Image {current_img_idx_in_group + 1} of {len(group_indices)}: {uploaded_file.name}"
                             )
+                            st.write("Progress: " + " ".join(nav_indicators))
 
                             # Load and display the image for cropping
                             image = Image.open(uploaded_file)
@@ -860,7 +950,7 @@ class StreamlitRecipeApp:
                                 image, image_key, max_crops=5
                             )
 
-                            # Check if the user clicked "Done with Page"
+                            # Check if the user clicked "Next Page"
                             if st.session_state.get(
                                 f"{image_key}_page_complete", False
                             ):
@@ -903,14 +993,6 @@ class StreamlitRecipeApp:
                                     if st.button("Next Recipe Group ➡️", type="primary"):
                                         st.session_state.current_group_crop += 1
                                         st.session_state.current_image_crop = 0
-                                        st.rerun()
-                                else:
-                                    if st.button("✅ Finish Cropping", type="primary"):
-                                        st.session_state.crop_step_completed = True
-                                        st.session_state.crop_step_active = False
-                                        st.success(
-                                            "🎉 Manual cropping completed! Now you can extract the recipes."
-                                        )
                                         st.rerun()
 
                             with col3:
@@ -982,27 +1064,16 @@ class StreamlitRecipeApp:
                                 if st.button("Next Image ➡️"):
                                     st.session_state.current_image_crop += 1
                                     st.rerun()
-                            else:
-                                if st.button("✅ Finish Cropping", type="primary"):
-                                    st.session_state.crop_step_completed = True
-                                    st.session_state.crop_step_active = False
-                                    st.success(
-                                        "🎉 Manual cropping completed! Now you can extract the recipes."
-                                    )
-                                    st.rerun()
 
                         with col3:
-                            if st.button("⏭️ Skip This Image"):
-                                if current_img_idx < len(uploaded_files) - 1:
-                                    st.session_state.current_image_crop += 1
-                                    st.rerun()
-                                else:
-                                    st.session_state.crop_step_completed = True
-                                    st.session_state.crop_step_active = False
-                                    st.success(
-                                        "🎉 Manual cropping completed! Now you can extract the recipes."
-                                    )
-                                    st.rerun()
+                            # Finish cropping button - always visible
+                            if st.button("✅ Finish Cropping", type="primary", help="Complete cropping and proceed to extraction"):
+                                st.session_state.crop_step_completed = True
+                                st.session_state.crop_step_active = False
+                                st.success(
+                                    "🎉 Manual cropping completed! Now you can extract the recipes."
+                                )
+                                st.rerun()
 
                 else:  # multiple_recipes
                     st.info("🔄 You'll crop images for each individual recipe.")
@@ -1039,27 +1110,16 @@ class StreamlitRecipeApp:
                                 if st.button("Next Recipe ➡️"):
                                     st.session_state.current_image_crop += 1
                                     st.rerun()
-                            else:
-                                if st.button("✅ Finish Cropping", type="primary"):
-                                    st.session_state.crop_step_completed = True
-                                    st.session_state.crop_step_active = False
-                                    st.success(
-                                        "🎉 Manual cropping completed! Now you can extract the recipes."
-                                    )
-                                    st.rerun()
 
                         with col3:
-                            if st.button("⏭️ Skip This Recipe"):
-                                if current_img_idx < len(uploaded_files) - 1:
-                                    st.session_state.current_image_crop += 1
-                                    st.rerun()
-                                else:
-                                    st.session_state.crop_step_completed = True
-                                    st.session_state.crop_step_active = False
-                                    st.success(
-                                        "🎉 Manual cropping completed! Now you can extract the recipes."
-                                    )
-                                    st.rerun()
+                            # Finish cropping button - always visible
+                            if st.button("✅ Finish Cropping", type="primary", help="Complete cropping and proceed to extraction"):
+                                st.session_state.crop_step_completed = True
+                                st.session_state.crop_step_active = False
+                                st.success(
+                                    "🎉 Manual cropping completed! Now you can extract the recipes."
+                                )
+                                st.rerun()
 
             if extract_button:
                 progress_bar = st.progress(0)
@@ -1151,11 +1211,46 @@ class StreamlitRecipeApp:
                                     for i, (temp_path, uploaded_file) in enumerate(
                                         zip(temp_paths, uploaded_files)
                                     ):
-                                        # Save original image with original filename
-                                        original_path = os.path.join(
-                                            originals_dir, uploaded_file.name
-                                        )
-                                        Image.open(temp_path).save(original_path)
+                                        # Convert HEIC/HEIF to JPEG, keep others as-is
+                                        original_name = uploaded_file.name
+                                        if original_name.lower().endswith(
+                                            (".heic", ".heif")
+                                        ):
+                                            # Convert to JPEG with high quality
+                                            output_name = (
+                                                os.path.splitext(original_name)[0]
+                                                + ".jpg"
+                                            )
+                                            original_path = os.path.join(
+                                                originals_dir, output_name
+                                            )
+                                            img = Image.open(temp_path)
+                                            # Convert to RGB if necessary (HEIC might have alpha channel)
+                                            if img.mode in ("RGBA", "LA", "P"):
+                                                rgb_img = Image.new(
+                                                    "RGB", img.size, (255, 255, 255)
+                                                )
+                                                rgb_img.paste(
+                                                    img,
+                                                    mask=(
+                                                        img.split()[-1]
+                                                        if img.mode == "RGBA"
+                                                        else None
+                                                    ),
+                                                )
+                                                img = rgb_img
+                                            img.save(
+                                                original_path,
+                                                "JPEG",
+                                                quality=95,
+                                                optimize=True,
+                                            )
+                                        else:
+                                            # Keep original format for non-HEIC files
+                                            original_path = os.path.join(
+                                                originals_dir, original_name
+                                            )
+                                            Image.open(temp_path).save(original_path)
 
                                     # Retrieve cropped images from session state
                                     for i, temp_path in enumerate(temp_paths):
@@ -1334,10 +1429,49 @@ class StreamlitRecipeApp:
                                         ):
                                             original_file = uploaded_files[img_idx]
                                             temp_path = temp_paths[relative_idx]
-                                            original_path = os.path.join(
-                                                originals_dir, original_file.name
-                                            )
-                                            Image.open(temp_path).save(original_path)
+
+                                            # Convert HEIC/HEIF to JPEG, keep others as-is
+                                            original_name = original_file.name
+                                            if original_name.lower().endswith(
+                                                (".heic", ".heif")
+                                            ):
+                                                # Convert to JPEG with high quality
+                                                output_name = (
+                                                    os.path.splitext(original_name)[0]
+                                                    + ".jpg"
+                                                )
+                                                original_path = os.path.join(
+                                                    originals_dir, output_name
+                                                )
+                                                img = Image.open(temp_path)
+                                                # Convert to RGB if necessary (HEIC might have alpha channel)
+                                                if img.mode in ("RGBA", "LA", "P"):
+                                                    rgb_img = Image.new(
+                                                        "RGB", img.size, (255, 255, 255)
+                                                    )
+                                                    rgb_img.paste(
+                                                        img,
+                                                        mask=(
+                                                            img.split()[-1]
+                                                            if img.mode == "RGBA"
+                                                            else None
+                                                        ),
+                                                    )
+                                                    img = rgb_img
+                                                img.save(
+                                                    original_path,
+                                                    "JPEG",
+                                                    quality=95,
+                                                    optimize=True,
+                                                )
+                                            else:
+                                                # Keep original format for non-HEIC files
+                                                original_path = os.path.join(
+                                                    originals_dir, original_name
+                                                )
+                                                Image.open(temp_path).save(
+                                                    original_path
+                                                )
 
                                         # Get the images for this group from the original image indices
                                         for relative_idx, img_idx in enumerate(
@@ -1489,10 +1623,46 @@ class StreamlitRecipeApp:
                                         recipe_dir, "images", "originals"
                                     )
                                     os.makedirs(originals_dir, exist_ok=True)
-                                    original_path = os.path.join(
-                                        originals_dir, uploaded_file.name
-                                    )
-                                    Image.open(tmp_file_path).save(original_path)
+
+                                    # Convert HEIC/HEIF to JPEG, keep others as-is
+                                    original_name = uploaded_file.name
+                                    if original_name.lower().endswith(
+                                        (".heic", ".heif")
+                                    ):
+                                        # Convert to JPEG with high quality
+                                        output_name = (
+                                            os.path.splitext(original_name)[0] + ".jpg"
+                                        )
+                                        original_path = os.path.join(
+                                            originals_dir, output_name
+                                        )
+                                        img = Image.open(tmp_file_path)
+                                        # Convert to RGB if necessary (HEIC might have alpha channel)
+                                        if img.mode in ("RGBA", "LA", "P"):
+                                            rgb_img = Image.new(
+                                                "RGB", img.size, (255, 255, 255)
+                                            )
+                                            rgb_img.paste(
+                                                img,
+                                                mask=(
+                                                    img.split()[-1]
+                                                    if img.mode == "RGBA"
+                                                    else None
+                                                ),
+                                            )
+                                            img = rgb_img
+                                        img.save(
+                                            original_path,
+                                            "JPEG",
+                                            quality=95,
+                                            optimize=True,
+                                        )
+                                    else:
+                                        # Keep original format for non-HEIC files
+                                        original_path = os.path.join(
+                                            originals_dir, original_name
+                                        )
+                                        Image.open(tmp_file_path).save(original_path)
 
                                     image_key = f"multi_img_{i}"
 
@@ -1622,7 +1792,7 @@ class StreamlitRecipeApp:
                     # Recipe and extraction states
                     st.session_state.extracted_recipes = []
                     st.session_state.current_recipe = None
-                    
+
                     # Recipe grouping states
                     if "recipe_groups" in st.session_state:
                         st.session_state.recipe_groups = []
@@ -1634,7 +1804,7 @@ class StreamlitRecipeApp:
                         del st.session_state.num_groups
                     if "groups_saved_once" in st.session_state:
                         del st.session_state.groups_saved_once
-                    
+
                     # Cropping states
                     if "crop_regions" in st.session_state:
                         st.session_state.crop_regions = {}
@@ -1648,23 +1818,25 @@ class StreamlitRecipeApp:
                         del st.session_state.current_group_crop
                     if "current_image_crop" in st.session_state:
                         del st.session_state.current_image_crop
-                    
+
                     # Clear any page completion flags
                     keys_to_remove = []
                     for key in st.session_state:
-                        if key.endswith("_page_complete") or key.endswith("_crop_index"):
+                        if key.endswith("_page_complete") or key.endswith(
+                            "_crop_index"
+                        ):
                             keys_to_remove.append(key)
                     for key in keys_to_remove:
                         del st.session_state[key]
-                    
+
                     # Image caches
                     if "thumbnail_cache" in st.session_state:
                         del st.session_state.thumbnail_cache
-                    
+
                     # Recipe directory tracking
                     if "recipe_dir" in st.session_state:
                         del st.session_state.recipe_dir
-                    
+
                     st.rerun()
 
     def web_url_tab(self):
