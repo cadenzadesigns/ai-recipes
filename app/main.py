@@ -1342,6 +1342,8 @@ class StreamlitRecipeApp:
                                 # Update the saved files with image references
                                 formatter.update_recipe_files(recipe, recipe_dir)
 
+                            # Store recipe with its directory path
+                            recipe._recipe_dir = recipe_dir  # Add custom attribute
                             extracted_recipes.append(recipe)
 
                         finally:
@@ -1570,6 +1572,8 @@ class StreamlitRecipeApp:
                                     # Update saved files
                                     formatter.update_recipe_files(recipe, recipe_dir)
 
+                                # Store recipe with its directory path
+                                recipe._recipe_dir = recipe_dir
                                 extracted_recipes.append(recipe)
 
                             finally:
@@ -1742,6 +1746,8 @@ class StreamlitRecipeApp:
                                 # Update the saved files with image references
                                 formatter.update_recipe_files(recipe, recipe_dir)
 
+                                # Store recipe with its directory path
+                                recipe._recipe_dir = recipe_dir
                                 extracted_recipes.append(recipe)
 
                             finally:
@@ -1788,55 +1794,9 @@ class StreamlitRecipeApp:
                 if st.button(
                     "🔄 Start New Extraction", type="primary", use_container_width=True
                 ):
-                    # Clear ALL extraction-related session state
-                    # Recipe and extraction states
-                    st.session_state.extracted_recipes = []
-                    st.session_state.current_recipe = None
-
-                    # Recipe grouping states
-                    if "recipe_groups" in st.session_state:
-                        st.session_state.recipe_groups = []
-                    if "recipe_groups_df" in st.session_state:
-                        del st.session_state.recipe_groups_df
-                    if "saved_assignments" in st.session_state:
-                        del st.session_state.saved_assignments
-                    if "num_groups" in st.session_state:
-                        del st.session_state.num_groups
-                    if "groups_saved_once" in st.session_state:
-                        del st.session_state.groups_saved_once
-
-                    # Cropping states
-                    if "crop_regions" in st.session_state:
-                        st.session_state.crop_regions = {}
-                    if "current_image_index" in st.session_state:
-                        st.session_state.current_image_index = 0
-                    if "crop_step_completed" in st.session_state:
-                        del st.session_state.crop_step_completed
-                    if "crop_step_active" in st.session_state:
-                        del st.session_state.crop_step_active
-                    if "current_group_crop" in st.session_state:
-                        del st.session_state.current_group_crop
-                    if "current_image_crop" in st.session_state:
-                        del st.session_state.current_image_crop
-
-                    # Clear any page completion flags
-                    keys_to_remove = []
-                    for key in st.session_state:
-                        if key.endswith("_page_complete") or key.endswith(
-                            "_crop_index"
-                        ):
-                            keys_to_remove.append(key)
-                    for key in keys_to_remove:
+                    # Clear all session state and refresh the page
+                    for key in list(st.session_state.keys()):
                         del st.session_state[key]
-
-                    # Image caches
-                    if "thumbnail_cache" in st.session_state:
-                        del st.session_state.thumbnail_cache
-
-                    # Recipe directory tracking
-                    if "recipe_dir" in st.session_state:
-                        del st.session_state.recipe_dir
-
                     st.rerun()
 
     def web_url_tab(self):
@@ -2171,6 +2131,29 @@ class StreamlitRecipeApp:
 
         if recipe.description:
             st.markdown(f"**Description:** {recipe.description}")
+        
+        # Display main recipe image if available
+        recipe_dir = getattr(recipe, '_recipe_dir', None) or st.session_state.get("recipe_dir")
+        if recipe_dir and recipe.images:
+            main_images = [img for img in recipe.images if img.is_main]
+            if main_images:
+                image_path = Path(recipe_dir) / "images" / main_images[0].filename
+                if image_path.exists():
+                    st.image(
+                        str(image_path),
+                        caption=main_images[0].description or "Main recipe image",
+                        width=600,  # Fixed width for reasonable display
+                    )
+            # Show all images if no main image
+            elif recipe.images:
+                # Just show the first image as main
+                image_path = Path(recipe_dir) / "images" / recipe.images[0].filename
+                if image_path.exists():
+                    st.image(
+                        str(image_path),
+                        caption=recipe.images[0].description or "Recipe image",
+                        width=600,  # Fixed width for reasonable display
+                    )
 
         # Recipe metadata in columns
         col1, col2, col3 = st.columns(3)
@@ -2201,6 +2184,22 @@ class StreamlitRecipeApp:
             st.markdown("#### 📝 Notes")
             for note in recipe.notes:
                 st.markdown(f"• {note}")
+        
+        # Step-by-step images if available
+        if recipe_dir and recipe.images:
+            step_images = [img for img in recipe.images if img.is_step]
+            if step_images:
+                with st.expander("🖼️ Step-by-step Photos", expanded=True):
+                    cols = st.columns(min(3, len(step_images)))
+                    for i, img in enumerate(step_images):
+                        image_path = Path(recipe_dir) / "images" / img.filename
+                        if image_path.exists():
+                            with cols[i % min(3, len(step_images))]:
+                                st.image(
+                                    str(image_path),
+                                    caption=img.description or f"Step {i+1}",
+                                    width=300,  # Smaller width for step images
+                                )
 
         # Download options
         st.markdown("#### 💾 Download Options")

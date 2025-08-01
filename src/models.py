@@ -10,11 +10,11 @@ class Amount(BaseModel):
 
     quantity: str | None = Field(
         default=None,
-        description="The numeric quantity (e.g., '1', '2.5', '1/2', '1-2')",
+        description="The numeric quantity (e.g., '1', '2.5', '1/2', '1-2'). This should ONLY be numbers or numeric expressions, never descriptive text like 'for serving'.",
     )
     unit: str | None = Field(
         default=None,
-        description="The unit of measurement (e.g., 'cup', 'tablespoon', 'pound')",
+        description="The unit of measurement (e.g., 'cup', 'tablespoon', 'pound'). This should ONLY be actual units of measurement, not usage instructions.",
     )
 
     @field_validator("quantity", mode="before")
@@ -28,11 +28,11 @@ class Item(BaseModel):
     """Represents the ingredient item with name and modifiers."""
 
     name: str = Field(
-        description="The main ingredient name (e.g., 'flour', 'butter', 'eggs', 'salt', 'cumin')"
+        description="The main ingredient name (e.g., 'flour', 'butter', 'eggs', 'salt', 'cumin', 'neutral oil'). This should be the core ingredient, not descriptive phrases."
     )
     modifiers: list[str] | None = Field(
         default=None,
-        description="List of modifiers/specifications (e.g., ['all-purpose'], ['unsalted', 'softened'], ['kosher'], ['ground'])",
+        description="List of modifiers/specifications including preparation notes and usage instructions (e.g., ['all-purpose'], ['unsalted', 'softened'], ['kosher'], ['ground'], ['such as grapeseed or canola', 'for the grill']). Include ALL descriptive text that isn't the core ingredient name.",
     )
     alternative: Item | None = Field(
         default=None,
@@ -55,11 +55,14 @@ class Item(BaseModel):
 
     def to_string(self) -> str:
         """Convert item to human-readable string."""
-        parts = []
+        # Name always comes first
+        parts = [self.name]
+        
+        # Then modifiers come after
         if self.modifiers:
             parts.append(", ".join(self.modifiers))
-        parts.append(self.name)
-        result = " ".join(parts)
+        
+        result = ", ".join(parts)
 
         if self.alternative:
             result += f" (or {self.alternative.to_string()})"
@@ -71,9 +74,9 @@ class Ingredient(BaseModel):
     """Represents a single ingredient with amount and item details."""
 
     amount: Amount | None = Field(
-        default=None, description="The amount/quantity of the ingredient"
+        default=None, description="The amount/quantity of the ingredient. For ingredients like 'Ritz crackers, for serving' or 'salt to taste', the amount should be None."
     )
-    item: Item = Field(description="The ingredient item with name and modifiers")
+    item: Item = Field(description="The ingredient item with name and modifiers. For 'Ritz crackers, for serving', name='Ritz crackers' and modifiers=['for serving'].")
 
     def to_string(self) -> str:
         """Convert ingredient to human-readable string."""
@@ -146,7 +149,7 @@ class Recipe(BaseModel):
         description="Total cook time including prep and cooking (e.g., '45 minutes', '1 hour 30 minutes')",
     )
     ingredients: list[Ingredient] = Field(
-        description="List of ingredients with structured amounts and items"
+        description="List of ingredients with structured amounts and items. Parse each ingredient line as: [amount] [ingredient name], [modifiers]. Examples: '1 pound cooked crabmeat' → amount='1 pound', name='crabmeat', modifiers=['cooked']. 'Ritz crackers, for serving' → no amount, name='Ritz crackers', modifiers=['for serving']. '2 tablespoons fresh, minced chives' → amount='2 tablespoons', name='chives', modifiers=['fresh', 'minced']. The ingredient name is the core item (crabmeat, chives, Ritz crackers), everything else is modifiers."
     )
     directions: list[str] = Field(description="Step-by-step cooking directions")
     notes: list[str] | None = Field(
