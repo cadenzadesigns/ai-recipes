@@ -95,13 +95,29 @@ uv run streamlit run app/main.py
 ```
 
 **Features:**
-- 📸 **Single Image**: Extract recipe from one image with drag & drop
-- 📚 **Batch Images**: Process multiple images as separate recipes or combine into one
-- 🌐 **Web URL**: Extract recipes from any webpage
-- 📄 **PDF Upload**: Extract recipes from PDF cookbooks
-- 💾 **Auto-save**: All recipes are automatically saved to the `/recipes` directory
-- 🖼️ **Image Detection**: Automatic recipe photo extraction and cropping
+- 📸 **Single Image**: Extract recipe from one image with manual cropping
+- 📚 **Batch Images**: Smart recipe grouping system that handles:
+  - Single-page recipes (1 image = 1 recipe)
+  - Multi-page recipes (multiple images = 1 recipe)
+  - Multiple recipes (flexible grouping of any combination)
+- ✂️ **Manual Image Cropping**: Interactive bounding box interface to:
+  - Select exact recipe content from cookbook pages
+  - Mark images as main recipe photo or step-by-step photos
+  - Skip pages without recipe content
+  - Finish early when desired content is captured
+- 🌐 **Web URL**: Extract recipes from any webpage with image cropping
+- 📄 **PDF Upload**: Extract recipes from PDF cookbooks with page selection
+- 💾 **Auto-save**: All recipes saved to `/recipes` with organized structure
+- 🖼️ **Image Preservation**: Original uploads kept in `/images/originals`
 - 📥 **Downloads**: Export as TXT, JSON, or ZIP archives
+
+**Workflow:**
+1. **Upload**: Drag and drop multiple cookbook/recipe images
+2. **Group**: Organize images into recipe groups using the visual interface
+3. **Crop**: Draw bounding boxes around recipe content
+   - Main recipe photos are marked with `_main` suffix
+   - Step photos are marked with `_step` suffix
+4. **Extract**: AI processes the cropped regions and saves structured recipes
 
 ### Command Line Interface
 
@@ -242,15 +258,20 @@ recipes/
 │   ├── chocolate_chip_cookies.txt   # Human-readable text file
 │   ├── chocolate_chip_cookies.json  # JSON for integrations
 │   └── images/                      # Extracted recipe images
-│       ├── main.jpg                 # Main recipe photo
-│       ├── step_1.jpg               # Step-by-step photos
-│       ├── step_2.jpg
-│       └── metadata.json            # Image descriptions
+│       ├── chocolate_chip_cookies_image_1_main.png  # Main recipe photo
+│       ├── chocolate_chip_cookies_image_2_step.png  # Step-by-step photos
+│       ├── chocolate_chip_cookies_image_3_step.png
+│       ├── metadata.json            # Image descriptions and metadata
+│       └── originals/               # Original uploaded images preserved
+│           ├── cookbook_page_1.jpg
+│           └── cookbook_page_2.jpg
 ├── apple_pie/
 │   ├── apple_pie.txt
 │   ├── apple_pie.json
 │   └── images/
-│       └── main.jpg
+│       ├── apple_pie_image_1_main.png
+│       └── originals/
+│           └── recipe_scan.jpg
 └── index.txt                        # Index of all recipes
 ```
 
@@ -339,7 +360,8 @@ ai-recipes/
 │   ├── config.py        # Web app configuration
 │   ├── utils.py         # Utility functions
 │   └── components/      # Reusable UI components
-│       ├── batch_processor.py    # Batch image processing
+│       ├── image_cropper.py      # Interactive manual cropping interface
+│       ├── batch_processor.py    # Batch processing (legacy)
 │       ├── download_manager.py   # File download handling
 │       ├── image_upload.py       # Image upload components
 │       └── recipe_display.py     # Recipe display components

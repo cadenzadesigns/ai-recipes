@@ -93,6 +93,8 @@ class StreamlitRecipeApp:
             st.session_state.api_key_valid = False
         if "current_recipe" not in st.session_state:
             st.session_state.current_recipe = None
+        if "crop_regions" not in st.session_state:
+            st.session_state.crop_regions = {}
 
     def setup_api_key(self):
         """Handle OpenAI API key configuration."""
@@ -287,22 +289,23 @@ class StreamlitRecipeApp:
         """Handle batch image extraction."""
         st.header("📚 Batch Image Processing")
 
-        # Clear explanation of the three modes
+        # Clear explanation of the unified grouping system
         st.info(
             """
-        **Three processing modes available:**
+        **How it works:**
 
-        🔄 **Multiple Recipes Mode** - Each image contains a different recipe
-        - Example: You have 5 photos from different cookbook pages, each showing a complete recipe
-        - Result: 5 separate recipe files
+        📚 **Smart Recipe Grouping** - Organize your images into recipe groups
+        - Each group becomes one complete recipe
+        - Handles all scenarios automatically:
+          • **Single-page recipes**: 1 image = 1 group = 1 recipe
+          • **Multi-page recipes**: Multiple images in 1 group = 1 combined recipe
+          • **Multiple recipes**: Multiple groups = Multiple separate recipes
 
-        📄 **Single Multi-Page Recipe Mode** - All images are parts of ONE recipe
-        - Example: One recipe spans across 3 pages/photos
-        - Result: 1 combined recipe file
-
-        📚 **Multiple Multi-Page Recipes Mode** - Group images into multiple recipes
-        - Example: Recipe 1 uses images 1-2, Recipe 2 uses images 3-5, Recipe 3 uses image 6
-        - Result: 3 separate recipe files from your groupings
+        📸 **Manual Image Cropping** - Select the exact recipe content
+        - Draw bounding boxes around recipe images
+        - Mark images as main recipe photo or step-by-step photos
+        - Skip pages without recipe content
+        - Finish early when you've cropped what you need
         """
         )
 
@@ -735,15 +738,83 @@ class StreamlitRecipeApp:
                     valid_groups = [
                         g for g in st.session_state.get("recipe_groups", []) if g
                     ]
-                    st.info(
-                        f"📚 You'll crop images for {len(valid_groups)} recipe groups."
-                    )
+                    # Initialize crop_regions if not exists
+                    if "crop_regions" not in st.session_state:
+                        st.session_state.crop_regions = {}
+                    
+                    # Calculate overall progress
+                    total_crops = 0
+                    recipes_with_crops = 0
+                    for i in range(len(valid_groups)):
+                        recipe_has_crops = False
+                        for img_idx_in_group, img_idx in enumerate(valid_groups[i]):
+                            image_key = f"group_{i}_img_{img_idx_in_group}"
+                            if image_key in st.session_state.crop_regions and st.session_state.crop_regions[image_key]:
+                                total_crops += len(st.session_state.crop_regions[image_key])
+                                recipe_has_crops = True
+                        if recipe_has_crops:
+                            recipes_with_crops += 1
+                    
+                    # Show progress summary
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Recipes", len(valid_groups))
+                    with col2:
+                        st.metric("Recipes with Crops", f"{recipes_with_crops}/{len(valid_groups)}")
+                    with col3:
+                        st.metric("Total Images Cropped", total_crops)
 
                     # Initialize cropping state
                     if "current_group_crop" not in st.session_state:
                         st.session_state.current_group_crop = 0
 
                     current_group = st.session_state.current_group_crop
+                    
+                    # Recipe navigation header
+                    st.markdown("### 📚 Recipe Navigation")
+                    nav_cols = st.columns(len(valid_groups) if len(valid_groups) <= 5 else 5)
+                    
+                    # Show navigation buttons for all recipe groups
+                    for i in range(len(valid_groups)):
+                        col_idx = i % len(nav_cols)
+                        with nav_cols[col_idx]:
+                            # Check if this recipe has any crops
+                            has_crops = False
+                            group_crop_count = 0
+                            for img_idx_in_group, img_idx in enumerate(valid_groups[i]):
+                                image_key = f"group_{i}_img_{img_idx_in_group}"
+                                if image_key in st.session_state.crop_regions and st.session_state.crop_regions[image_key]:
+                                    has_crops = True
+                                    group_crop_count += len(st.session_state.crop_regions[image_key])
+                            
+                            # Create button label with status
+                            if has_crops:
+                                button_label = f"✅ Recipe {i + 1} ({group_crop_count})"
+                                button_help = f"Recipe {i + 1} - {group_crop_count} images cropped"
+                            else:
+                                button_label = f"📖 Recipe {i + 1}"
+                                button_help = f"Recipe {i + 1} - No crops yet"
+                            
+                            if i == current_group:
+                                st.button(
+                                    button_label,
+                                    type="primary",
+                                    disabled=True,
+                                    use_container_width=True,
+                                    help="Current recipe"
+                                )
+                            else:
+                                if st.button(
+                                    button_label,
+                                    type="secondary",
+                                    use_container_width=True,
+                                    help=button_help
+                                ):
+                                    st.session_state.current_group_crop = i
+                                    st.session_state.current_image_crop = 0
+                                    st.rerun()
+                    
+                    st.markdown("---")
 
                     if current_group < len(valid_groups):
                         group_indices = valid_groups[current_group]
@@ -1547,17 +1618,53 @@ class StreamlitRecipeApp:
                 if st.button(
                     "🔄 Start New Extraction", type="primary", use_container_width=True
                 ):
-                    # Clear the extracted recipes
+                    # Clear ALL extraction-related session state
+                    # Recipe and extraction states
                     st.session_state.extracted_recipes = []
-                    # Clear recipe groups if they exist
+                    st.session_state.current_recipe = None
+                    
+                    # Recipe grouping states
                     if "recipe_groups" in st.session_state:
                         st.session_state.recipe_groups = []
                     if "recipe_groups_df" in st.session_state:
                         del st.session_state.recipe_groups_df
                     if "saved_assignments" in st.session_state:
                         del st.session_state.saved_assignments
+                    if "num_groups" in st.session_state:
+                        del st.session_state.num_groups
+                    if "groups_saved_once" in st.session_state:
+                        del st.session_state.groups_saved_once
+                    
+                    # Cropping states
+                    if "crop_regions" in st.session_state:
+                        st.session_state.crop_regions = {}
+                    if "current_image_index" in st.session_state:
+                        st.session_state.current_image_index = 0
+                    if "crop_step_completed" in st.session_state:
+                        del st.session_state.crop_step_completed
+                    if "crop_step_active" in st.session_state:
+                        del st.session_state.crop_step_active
+                    if "current_group_crop" in st.session_state:
+                        del st.session_state.current_group_crop
+                    if "current_image_crop" in st.session_state:
+                        del st.session_state.current_image_crop
+                    
+                    # Clear any page completion flags
+                    keys_to_remove = []
+                    for key in st.session_state:
+                        if key.endswith("_page_complete") or key.endswith("_crop_index"):
+                            keys_to_remove.append(key)
+                    for key in keys_to_remove:
+                        del st.session_state[key]
+                    
+                    # Image caches
                     if "thumbnail_cache" in st.session_state:
                         del st.session_state.thumbnail_cache
+                    
+                    # Recipe directory tracking
+                    if "recipe_dir" in st.session_state:
+                        del st.session_state.recipe_dir
+                    
                     st.rerun()
 
     def web_url_tab(self):
