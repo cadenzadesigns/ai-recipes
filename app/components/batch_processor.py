@@ -16,10 +16,89 @@ sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
 from formatter import RecipeFormatter
 
+from app.components.image_cropper import StreamlitImageCropper
 from extractors.image import ImageExtractor
 from extractors.recipe_image_extractor import RecipeImageExtractor
 from llm_client import LLMClient
 from models import Recipe, RecipeImage
+
+
+def handle_manual_cropping_ui():
+    """Handle manual cropping UI for pending crops."""
+    st.divider()
+    st.header("✂️ Manual Image Cropping")
+
+    if "current_crop_index" not in st.session_state:
+        st.session_state.current_crop_index = 0
+
+    pending_crops = st.session_state.pending_crops
+    current_index = st.session_state.current_crop_index
+
+    if current_index < len(pending_crops):
+        crop_data = pending_crops[current_index]
+        recipe = crop_data["recipe"]
+
+        st.write(
+            f"### Recipe {current_index + 1} of {len(pending_crops)}: {recipe.name}"
+        )
+
+        # Load images
+        if "is_combined" in crop_data and crop_data["is_combined"]:
+            # Multiple images for one recipe
+            image_paths = crop_data["image_paths"]
+            image_names = crop_data["image_names"]
+            images = []
+            for path, name in zip(image_paths, image_names):
+                pil_img = Image.open(path)
+                images.append((path, pil_img))
+        else:
+            # Single image
+            image_path = crop_data["image_path"]
+            pil_img = Image.open(image_path)
+            images = [(image_path, pil_img)]
+
+        # Initialize cropper
+        cropper = StreamlitImageCropper()
+
+        # Perform cropping
+        crop_regions = cropper.crop_multiple_images(images, recipe.name)
+
+        if crop_regions is not None:
+            # Save cropped images
+            all_images = {path: img for path, img in images}
+            metadata = cropper.save_cropped_images(
+                all_images, crop_regions, recipe.name, Path(crop_data["recipe_dir"])
+            )
+
+            # Update recipe with images
+            if metadata["extracted_images"]:
+                recipe.images = [
+                    RecipeImage(
+                        filename=img["filename"],
+                        description=img["description"],
+                        is_main=img["is_main"],
+                        is_step=img["is_step"],
+                    )
+                    for img in metadata["extracted_images"]
+                ]
+
+                # Update recipe files
+                formatter = RecipeFormatter()
+                formatter.update_recipe_files(recipe, crop_data["recipe_dir"])
+
+            # Move to next recipe
+            st.session_state.current_crop_index += 1
+            if st.session_state.current_crop_index >= len(pending_crops):
+                st.success("✅ All manual cropping completed!")
+                # Clear pending crops
+                st.session_state.pending_crops = []
+                st.session_state.current_crop_index = 0
+            else:
+                st.rerun()
+    else:
+        st.success("✅ All manual cropping completed!")
+        st.session_state.pending_crops = []
+        st.session_state.current_crop_index = 0
 
 
 class BatchProcessingResult:
@@ -80,8 +159,15 @@ def batch_processor_ui():
         enable_image_extraction = st.checkbox(
             "🖼️ Extract Recipe Images",
             value=True,
-            help="Automatically detect and extract recipe images from cookbook pages",
+            help="Extract recipe images from cookbook pages",
         )
+
+        if enable_image_extraction:
+            manual_crop = st.checkbox(
+                "✂️ Manual Crop",
+                value=True,
+                help="Manually select recipe images to extract instead of automatic detection",
+            )
 
     # Advanced options
     with st.expander("⚙️ Advanced Options"):
@@ -107,17 +193,36 @@ def batch_processor_ui():
 
     # Process button
     if st.button("🚀 Process Recipes", type="primary", use_container_width=True):
+        # Determine manual crop setting
+        use_manual_crop = (
+            enable_image_extraction and manual_crop
+            if "manual_crop" in locals()
+            else False
+        )
+
         if processing_mode == "individual":
             results = process_images_individually(
-                uploaded_files, enable_image_extraction, max_size, output_format
+                uploaded_files,
+                enable_image_extraction,
+                max_size,
+                output_format,
+                use_manual_crop,
             )
         else:
             results = process_images_combined(
-                uploaded_files, enable_image_extraction, max_size, output_format
+                uploaded_files,
+                enable_image_extraction,
+                max_size,
+                output_format,
+                use_manual_crop,
             )
 
         # Display results
         display_batch_results(results, output_format)
+
+        # Handle manual cropping if there are pending crops
+        if "pending_crops" in st.session_state and st.session_state.pending_crops:
+            handle_manual_cropping_ui()
 
 
 def display_image_grid(uploaded_files: List) -> None:
@@ -137,12 +242,18 @@ def display_image_grid(uploaded_files: List) -> None:
         for col, file in zip(cols, row):
             with col:
                 try:
-                    # Display thumbnail
+                    # Create thumbnail for faster display
+                    file.seek(0)
                     image = Image.open(file)
+
+                    # Create higher quality thumbnail
+                    thumbnail = image.copy()
+                    thumbnail.thumbnail((400, 400), Image.Resampling.LANCZOS)
+
                     # Reset file pointer for later use
                     file.seek(0)
 
-                    st.image(image, caption=file.name, use_column_width=True)
+                    st.image(thumbnail, caption=file.name, use_column_width=True)
 
                     # Show file info
                     st.caption(f"📏 {image.size[0]}×{image.size[1]}")
@@ -156,6 +267,7 @@ def process_images_individually(
     enable_image_extraction: bool,
     max_size: int,
     output_format: str,
+    manual_crop: bool = False,
 ) -> BatchProcessingResult:
     """Process each image as a separate recipe."""
 
@@ -205,13 +317,28 @@ def process_images_individually(
             recipe_dir = formatter.save_recipe(recipe)
 
             # Handle image extraction if enabled
-            if enable_image_extraction and recipe_image_extractor:
-                show_processing_progress(f"Extracting images for {recipe.name}")
-
-                # Extract images to the saved recipe directory
-                image_metadata = recipe_image_extractor.extract_recipe_images(
-                    [tmp_file_path], recipe.name, recipe_dir
-                )
+            if enable_image_extraction:
+                if manual_crop:
+                    # Manual cropping for individual images
+                    st.info(f"Ready for manual cropping: {recipe.name}")
+                    # Store for later manual cropping
+                    if "pending_crops" not in st.session_state:
+                        st.session_state.pending_crops = []
+                    st.session_state.pending_crops.append(
+                        {
+                            "recipe": recipe,
+                            "recipe_dir": recipe_dir,
+                            "image_path": tmp_file_path,
+                            "image_name": uploaded_file.name,
+                        }
+                    )
+                    image_metadata = {"extracted_images": []}
+                else:
+                    # Automatic extraction
+                    show_processing_progress(f"Extracting images for {recipe.name}")
+                    image_metadata = recipe_image_extractor.extract_recipe_images(
+                        [tmp_file_path], recipe.name, recipe_dir
+                    )
 
                 # Add extracted images to recipe
                 if image_metadata.get("extracted_images"):
@@ -261,6 +388,7 @@ def process_images_combined(
     enable_image_extraction: bool,
     max_size: int,
     output_format: str,
+    manual_crop: bool = False,
 ) -> BatchProcessingResult:
     """Process all images as one multi-page recipe."""
 
@@ -316,13 +444,29 @@ def process_images_combined(
         recipe_dir = formatter.save_recipe(recipe)
 
         # Handle image extraction if enabled
-        if enable_image_extraction and recipe_image_extractor:
-            status_text.text(f"Extracting images for {recipe.name}...")
-
-            # Extract images to the saved recipe directory
-            image_metadata = recipe_image_extractor.extract_recipe_images(
-                temp_file_paths, recipe.name, recipe_dir
-            )
+        if enable_image_extraction:
+            if manual_crop:
+                # Manual cropping for combined recipe
+                st.info(f"Ready for manual cropping: {recipe.name}")
+                # Store for later manual cropping
+                if "pending_crops" not in st.session_state:
+                    st.session_state.pending_crops = []
+                st.session_state.pending_crops.append(
+                    {
+                        "recipe": recipe,
+                        "recipe_dir": recipe_dir,
+                        "image_paths": temp_file_paths,
+                        "image_names": [f.name for f in uploaded_files],
+                        "is_combined": True,
+                    }
+                )
+                image_metadata = {"extracted_images": []}
+            else:
+                # Automatic extraction
+                status_text.text(f"Extracting images for {recipe.name}...")
+                image_metadata = recipe_image_extractor.extract_recipe_images(
+                    temp_file_paths, recipe.name, recipe_dir
+                )
 
             # Add extracted images to recipe
             if image_metadata.get("extracted_images"):

@@ -1,5 +1,8 @@
+import base64
+import io
 import json
 import os
+from io import BytesIO
 
 # Import from the existing src modules
 import sys
@@ -21,10 +24,13 @@ except ImportError:
 
 sys.path.append(str(Path(__file__).parent.parent))
 
+from app.components.image_cropper import StreamlitImageCropper
 from src.extractors.image import ImageExtractor
 from src.extractors.pdf import PDFExtractor
+from src.extractors.pdf_image_extractor import PDFImageExtractor
 from src.extractors.recipe_image_extractor import RecipeImageExtractor
 from src.extractors.web import WebExtractor
+from src.extractors.web_image_extractor import WebImageExtractor
 from src.formatter import RecipeFormatter
 from src.llm_client import LLMClient
 from src.models import Recipe, RecipeImage
@@ -32,6 +38,34 @@ from src.models import Recipe, RecipeImage
 # Load environment variables from .env file in the project root
 env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(env_path)
+
+
+@st.cache_data
+def create_thumbnail(
+    file_content: bytes, filename: str, size: tuple = (400, 400)
+) -> Image.Image:
+    """Create and cache a thumbnail from file content."""
+    img = Image.open(io.BytesIO(file_content))
+    thumbnail = img.copy()
+    thumbnail.thumbnail(size, Image.Resampling.LANCZOS)
+    return thumbnail
+
+
+@st.cache_data
+def create_thumbnail_base64(
+    file_content: bytes, filename: str, size: tuple = (150, 150)
+) -> str:
+    """Create a base64-encoded thumbnail from file content."""
+    img = Image.open(io.BytesIO(file_content))
+    thumbnail = img.copy()
+    thumbnail.thumbnail(size, Image.Resampling.LANCZOS)
+
+    # Convert to base64
+    buffered = io.BytesIO()
+    thumbnail.save(buffered, format="PNG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode()
+
+    return f"data:image/png;base64,{img_base64}"
 
 
 class StreamlitRecipeApp:
@@ -130,10 +164,16 @@ class StreamlitRecipeApp:
             uploaded_file.seek(0)  # Reset file pointer
             st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
 
-            col1, col2 = st.columns([1, 3])
+            col1, col2, col3 = st.columns([1, 1, 2])
             with col1:
                 extract_button = st.button(
                     "🚀 Extract Recipe", type="primary", key="single_extract_button"
+                )
+            with col2:
+                manual_crop = st.checkbox(
+                    "✂️ Manual Crop",
+                    value=True,
+                    help="Manually select recipe images to extract",
                 )
 
             if extract_button:
@@ -163,13 +203,58 @@ class StreamlitRecipeApp:
                             formatter = RecipeFormatter()
                             recipe_dir = formatter.save_recipe(recipe)
 
-                            # Extract recipe images if any
-                            recipe_image_extractor = RecipeImageExtractor(llm_client)
-                            image_metadata = (
-                                recipe_image_extractor.extract_recipe_images(
-                                    [tmp_file_path], recipe.name, recipe_dir
+                            # Extract recipe images
+                            if manual_crop:
+                                # Manual cropping workflow
+                                st.success(
+                                    "Recipe text extracted! Now let's crop the images."
                                 )
-                            )
+
+                                # Load image for cropping
+                                pil_image = Image.open(tmp_file_path)
+
+                                # Initialize cropper
+                                cropper = StreamlitImageCropper()
+
+                                # Single image cropping
+                                st.write("### Manual Image Cropping")
+                                st.write(
+                                    "Define regions for recipe images you want to extract."
+                                )
+
+                                crop_regions = cropper.crop_single_image_canvas(
+                                    pil_image, "single_image", max_crops=5
+                                )
+
+                                if st.button(
+                                    "💾 Save Cropped Images", key="save_crops"
+                                ):
+                                    if crop_regions:
+                                        # Save cropped images
+                                        image_metadata = cropper.save_cropped_images(
+                                            {tmp_file_path: pil_image},
+                                            {tmp_file_path: crop_regions},
+                                            recipe.name,
+                                            Path(recipe_dir),
+                                        )
+                                        st.success(
+                                            f"✅ Saved {len(image_metadata['extracted_images'])} cropped images!"
+                                        )
+                                    else:
+                                        image_metadata = {"extracted_images": []}
+                                        st.info(
+                                            "No regions defined. Skipping image extraction."
+                                        )
+                            else:
+                                # Automatic extraction
+                                recipe_image_extractor = RecipeImageExtractor(
+                                    llm_client
+                                )
+                                image_metadata = (
+                                    recipe_image_extractor.extract_recipe_images(
+                                        [tmp_file_path], recipe.name, recipe_dir
+                                    )
+                                )
 
                             # Update recipe with image references
                             recipe.images = [
@@ -288,185 +373,313 @@ class StreamlitRecipeApp:
                 )
 
                 # Image grouping interface
-                st.subheader("Group Your Images")
+                st.subheader("📊 Group Your Images")
 
-                # Initialize session state for groups if not exists
-                if "recipe_groups" not in st.session_state:
-                    st.session_state.recipe_groups = []
+                # Initialize saved assignments if not exists
+                if "saved_assignments" not in st.session_state:
+                    # Initialize all images to Recipe 1
+                    st.session_state.saved_assignments = {
+                        i: 1 for i in range(len(uploaded_files))
+                    }
+                    st.session_state.num_groups = 1
 
-                # Add new group button
-                col1, col2 = st.columns([1, 3])
+                # Group controls (outside form)
+                col1, col2, col3 = st.columns([2, 1, 1])
+
                 with col1:
-                    if st.button("➕ Add Recipe Group", type="secondary"):
-                        st.session_state.recipe_groups.append([])
+                    # Use a form to prevent immediate updates
+                    with st.form("num_groups_form"):
+                        num_groups_input = st.number_input(
+                            "Number of recipe groups",
+                            min_value=1,
+                            max_value=min(len(uploaded_files), 10),
+                            value=st.session_state.get("num_groups", 1),
+                            help="How many different recipes do you want to create?",
+                        )
+                        
+                        col_a, col_b = st.columns([1, 1])
+                        with col_a:
+                            save_groups_btn = st.form_submit_button(
+                                "📊 Update Groups",
+                                type="secondary",
+                                use_container_width=True
+                            )
+                        
+                        if save_groups_btn:
+                            # Only update when button is clicked
+                            old_num_groups = st.session_state.get("num_groups", 1)
+                            st.session_state.num_groups = num_groups_input
+                            
+                            # If reducing groups, reassign higher group numbers to group 1
+                            if num_groups_input < old_num_groups:
+                                for idx in st.session_state.saved_assignments:
+                                    if st.session_state.saved_assignments[idx] > num_groups_input:
+                                        st.session_state.saved_assignments[idx] = 1
+                            
+                            st.rerun()
+                    
+                    # Use the saved value for display
+                    num_groups = st.session_state.get("num_groups", 1)
 
-                # Display existing groups
-                if st.session_state.recipe_groups:
-                    # First, show unassigned images
-                    all_assigned = []
-                    for group in st.session_state.recipe_groups:
-                        all_assigned.extend(group)
-                    assigned_set = set(all_assigned)
-
-                    unassigned = [
-                        i for i in range(len(uploaded_files)) if i not in assigned_set
-                    ]
-
-                    if unassigned:
-                        st.write("**Unassigned Images:**")
-                        cols = st.columns(min(len(unassigned), 4))
-                        for idx, img_idx in enumerate(unassigned):
-                            with cols[idx % 4]:
-                                st.write(
-                                    f"{img_idx + 1}. {uploaded_files[img_idx].name}"
-                                )
-
-                    # Display each group
-                    groups_to_remove = []
-
-                    # Use a form to handle multiselect updates better
-                    for group_idx in range(len(st.session_state.recipe_groups)):
-                        with st.expander(
-                            f"Recipe Group {group_idx + 1}", expanded=True
-                        ):
-                            # Calculate images assigned to OTHER groups
-                            other_assigned = set()
-                            for other_idx in range(len(st.session_state.recipe_groups)):
-                                if other_idx != group_idx:
-                                    other_assigned.update(
-                                        st.session_state.recipe_groups[other_idx]
-                                    )
-
-                            # Current group selections
-                            current_selections = st.session_state.recipe_groups[
-                                group_idx
-                            ]
-
-                            # Available = all images NOT in other groups
-                            available_indices = [
-                                i
-                                for i in range(len(uploaded_files))
-                                if i not in other_assigned
-                            ]
-
-                            # Sort available indices by filename
-                            available_indices.sort(key=lambda i: uploaded_files[i].name)
-
-                            # Show available images with thumbnails
-                            st.write("Select images for this recipe:")
-
-                            # Show current selections
-                            if current_selections:
-                                selected_names = [
-                                    f"{i+1}. {uploaded_files[i].name}"
-                                    for i in current_selections
-                                ]
-                                st.info(f"Selected: {', '.join(selected_names)}")
-
-                            # Create columns for image selection
-                            num_cols = 4
-                            rows_needed = (
-                                len(available_indices) + num_cols - 1
-                            ) // num_cols
-
-                            for row in range(rows_needed):
-                                cols = st.columns(num_cols)
-                                for col_idx in range(num_cols):
-                                    img_list_idx = row * num_cols + col_idx
-                                    if img_list_idx < len(available_indices):
-                                        img_idx = available_indices[img_list_idx]
-
-                                        with cols[col_idx]:
-                                            try:
-                                                file = uploaded_files[img_idx]
-                                                file.seek(0)
-                                                img = Image.open(file)
-
-                                                # Create a container for the image and selection state
-                                                is_selected = (
-                                                    img_idx in current_selections
-                                                )
-
-                                                # Show image with visual selection indicator
-                                                if is_selected:
-                                                    st.success(
-                                                        f"✓ {img_idx + 1}. {file.name}"
-                                                    )
-                                                else:
-                                                    st.caption(
-                                                        f"{img_idx + 1}. {file.name}"
-                                                    )
-
-                                                st.image(
-                                                    img,
-                                                    use_container_width=True,
-                                                )
-                                                file.seek(0)
-
-                                                # Toggle button
-                                                button_label = (
-                                                    "✓ Selected"
-                                                    if is_selected
-                                                    else "Select"
-                                                )
-                                                button_type = (
-                                                    "secondary"
-                                                    if is_selected
-                                                    else "primary"
-                                                )
-
-                                                if st.button(
-                                                    button_label,
-                                                    key=f"btn_group_{group_idx}_img_{img_idx}",
-                                                    type=button_type,
-                                                    use_container_width=True,
-                                                ):
-                                                    # Toggle selection
-                                                    if is_selected:
-                                                        st.session_state.recipe_groups[
-                                                            group_idx
-                                                        ].remove(img_idx)
-                                                    else:
-                                                        st.session_state.recipe_groups[
-                                                            group_idx
-                                                        ].append(img_idx)
-                                                    st.rerun()
-
-                                            except Exception as e:
-                                                st.error(f"Cannot preview: {str(e)}")
-
-                            # Remove group button
-                            if st.button(
-                                f"🗑️ Remove Group {group_idx + 1}",
-                                key=f"remove_{group_idx}",
-                            ):
-                                groups_to_remove.append(group_idx)
-
-                    # Remove marked groups
-                    for idx in reversed(groups_to_remove):
-                        st.session_state.recipe_groups.pop(idx)
+                with col2:
+                    if st.button("🔄 Reset All", type="secondary"):
+                        st.session_state.saved_assignments = {
+                            i: 1 for i in range(len(uploaded_files))
+                        }
+                        st.session_state.num_groups = 1
                         st.rerun()
 
-                    # Validate groups
-                    valid_groups = [g for g in st.session_state.recipe_groups if g]
-                    if not valid_groups:
-                        st.warning("Please add at least one recipe group with images.")
+                # Define colors for each recipe group
+                group_colors = [
+                    "#FF6B6B",  # Red
+                    "#4ECDC4",  # Teal
+                    "#45B7D1",  # Blue
+                    "#96CEB4",  # Green
+                    "#DDA0DD",  # Plum
+                    "#F4A460",  # Sandy brown
+                    "#98D8C8",  # Mint
+                    "#FFD93D",  # Yellow
+                    "#C7CEEA",  # Lavender
+                    "#FFAAA5",  # Pink
+                ]
 
-                    # Add recipe group button at the bottom too
+                # Show color legend
+                st.markdown("### Recipe Groups")
+                st.caption("Select images below, then click Save Groups when done")
+                legend_cols = st.columns(min(num_groups, 5))
+                for i in range(num_groups):
+                    with legend_cols[i % len(legend_cols)]:
+                        color = group_colors[i % len(group_colors)]
+                        st.markdown(
+                            f'<div style="background-color: {color}; padding: 10px; border-radius: 5px; text-align: center; color: white; font-weight: bold;">Recipe {i+1}</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                st.markdown("---")
+
+                # Create thumbnail cache if not exists
+                if "thumbnail_cache" not in st.session_state:
+                    st.session_state.thumbnail_cache = {}
+
+                # Sort files by filename
+                sorted_indices = sorted(
+                    range(len(uploaded_files)),
+                    key=lambda i: uploaded_files[i].name.lower(),
+                )
+
+                # Use a form to prevent reruns on each radio button change
+                with st.form("image_grouping_form"):
+                    st.markdown("### Your Images")
+
+                    # Track selections in the form
+                    form_selections = {}
+
+                    # Display images in rows of 4
+                    images_per_row = 4
+                    num_rows = (
+                        len(sorted_indices) + images_per_row - 1
+                    ) // images_per_row
+
+                    for row in range(num_rows):
+                        cols = st.columns(images_per_row)
+
+                        for col_idx in range(images_per_row):
+                            list_idx = row * images_per_row + col_idx
+
+                            if list_idx < len(sorted_indices):
+                                img_idx = sorted_indices[list_idx]
+
+                                with cols[col_idx]:
+                                    file = uploaded_files[img_idx]
+
+                                    # Get or create thumbnail
+                                    if img_idx not in st.session_state.thumbnail_cache:
+                                        file.seek(0)
+                                        thumbnail = create_thumbnail(
+                                            file.read(), file.name, size=(300, 300)
+                                        )
+                                        st.session_state.thumbnail_cache[img_idx] = (
+                                            thumbnail
+                                        )
+                                        file.seek(0)
+                                    else:
+                                        thumbnail = st.session_state.thumbnail_cache[
+                                            img_idx
+                                        ]
+
+                                    # Get current assignment from saved assignments
+                                    saved_group = st.session_state.saved_assignments.get(
+                                        img_idx, 1
+                                    )
+                                    
+                                    # During form editing, we don't show colored borders
+                                    # Only show gray borders to indicate the image container
+                                    
+                                    # Convert image to base64 for inline display
+                                    buffered = BytesIO()
+                                    thumbnail.save(buffered, format="PNG")
+                                    img_str = base64.b64encode(buffered.getvalue()).decode()
+                                    
+                                    # Display image with gray border
+                                    st.markdown(
+                                        f"""
+                                        <div style="
+                                            border: 3px solid #E0E0E0;
+                                            border-radius: 8px;
+                                            padding: 4px;
+                                            background-color: white;
+                                            margin-bottom: 8px;
+                                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                                        ">
+                                            <img src="data:image/png;base64,{img_str}" style="
+                                                width: 100%;
+                                                border-radius: 4px;
+                                                display: block;
+                                            ">
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True,
+                                    )
+
+                                    # Display filename
+                                    st.caption(
+                                        f"{file.name[:20]}..."
+                                        if len(file.name) > 20
+                                        else file.name
+                                    )
+
+                                    # Recipe assignment radio buttons
+                                    selected_group = st.radio(
+                                        "Recipe",
+                                        options=list(range(1, num_groups + 1)),
+                                        index=saved_group - 1,
+                                        key=f"form_radio_{img_idx}",
+                                        format_func=lambda x: f"R{x}",
+                                        horizontal=True,
+                                        label_visibility="collapsed",
+                                    )
+
+                                    # Store the selection
+                                    form_selections[img_idx] = selected_group
+
+                    # Form submit button
                     st.markdown("---")
-                    col1, col2 = st.columns([1, 3])
-                    with col1:
-                        if st.button(
-                            "➕ Add Recipe Group",
-                            type="secondary",
-                            key="add_recipe_bottom",
-                        ):
-                            st.session_state.recipe_groups.append([])
-                            st.rerun()
-                else:
-                    st.info(
-                        "Click '➕ Add Recipe Group' to start grouping your images."
-                    )
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col2:
+                        submitted = st.form_submit_button(
+                            "💾 Save Groups",
+                            type="primary",
+                            use_container_width=True,
+                        )
+
+                    if submitted:
+                        # Update saved assignments with form selections
+                        for img_idx, group in form_selections.items():
+                            st.session_state.saved_assignments[img_idx] = group
+                        # Mark that groups have been saved at least once
+                        st.session_state.groups_saved_once = True
+                        st.success("✅ Groups saved!")
+                        st.rerun()
+
+                # Show summary (outside form) - only after groups have been saved at least once
+                if st.session_state.get("groups_saved_once", False):
+                    st.markdown("---")
+                    st.markdown("### Saved Groups")
+
+                    # Count images per group (from saved assignments)
+                    group_counts = {}
+                    for group_num in range(1, num_groups + 1):
+                        count = sum(
+                            1
+                            for v in st.session_state.saved_assignments.values()
+                            if v == group_num
+                        )
+                        group_counts[group_num] = count
+
+                    summary_cols = st.columns(min(num_groups, 4))
+                    for i, (group_num, count) in enumerate(group_counts.items()):
+                        with summary_cols[i % len(summary_cols)]:
+                            color = group_colors[(group_num - 1) % len(group_colors)]
+                            st.markdown(
+                                f'<div style="background-color: {color}; padding: 20px; border-radius: 8px; text-align: center; color: white;">'
+                                f'<h3 style="margin: 0;">Recipe {group_num}</h3>'
+                                f'<h1 style="margin: 0;">{count}</h1>'
+                                f'<p style="margin: 0;">images</p>'
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+
+                    # Show saved assignments with colored borders
+                    st.markdown("---")
+                    st.markdown("### Saved Assignments")
+                    st.caption("Images are shown with their assigned recipe group colors")
+                    
+                    # Display images in rows of 6 for the summary view
+                    summary_images_per_row = 6
+                    num_summary_rows = (
+                        len(sorted_indices) + summary_images_per_row - 1
+                    ) // summary_images_per_row
+                    
+                    for row in range(num_summary_rows):
+                        cols = st.columns(summary_images_per_row)
+                        
+                        for col_idx in range(summary_images_per_row):
+                            list_idx = row * summary_images_per_row + col_idx
+                            
+                            if list_idx < len(sorted_indices):
+                                img_idx = sorted_indices[list_idx]
+                                
+                                with cols[col_idx]:
+                                    file = uploaded_files[img_idx]
+                                    
+                                    # Get thumbnail from cache
+                                    thumbnail = st.session_state.thumbnail_cache.get(img_idx)
+                                    if thumbnail:
+                                        # Get saved group assignment
+                                        saved_group = st.session_state.saved_assignments.get(
+                                            img_idx, 1
+                                        )
+                                        group_color = group_colors[
+                                            (saved_group - 1) % len(group_colors)
+                                        ]
+                                        
+                                        # Convert image to base64
+                                        buffered = BytesIO()
+                                        thumbnail.save(buffered, format="PNG")
+                                        img_str = base64.b64encode(buffered.getvalue()).decode()
+                                        
+                                        # Display image with colored border
+                                        st.markdown(
+                                            f"""
+                                            <div style="
+                                                border: 3px solid {group_color};
+                                                border-radius: 8px;
+                                                padding: 3px;
+                                                background-color: white;
+                                                margin-bottom: 4px;
+                                                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                                            ">
+                                                <img src="data:image/png;base64,{img_str}" style="
+                                                    width: 100%;
+                                                    border-radius: 4px;
+                                                    display: block;
+                                                ">
+                                            </div>
+                                            <p style="text-align: center; font-size: 11px; margin: 2px 0; color: {group_color}; font-weight: bold;">R{saved_group}</p>
+                                            """,
+                                            unsafe_allow_html=True,
+                                        )
+
+                # Create recipe_groups list from saved assignments
+                st.session_state.recipe_groups = []
+                for group_num in range(1, num_groups + 1):
+                    group_indices = [
+                        idx
+                        for idx, g in st.session_state.saved_assignments.items()
+                        if g == group_num
+                    ]
+                    if group_indices:
+                        st.session_state.recipe_groups.append(group_indices)
 
             col1, col2 = st.columns([1, 3])
             with col1:
@@ -808,6 +1021,12 @@ class StreamlitRecipeApp:
                     # Clear recipe groups if they exist
                     if "recipe_groups" in st.session_state:
                         st.session_state.recipe_groups = []
+                    if "recipe_groups_df" in st.session_state:
+                        del st.session_state.recipe_groups_df
+                    if "saved_assignments" in st.session_state:
+                        del st.session_state.saved_assignments
+                    if "thumbnail_cache" in st.session_state:
+                        del st.session_state.thumbnail_cache
                     st.rerun()
 
     def web_url_tab(self):
@@ -821,13 +1040,20 @@ class StreamlitRecipeApp:
             help="Enter the full URL of the webpage containing the recipe",
         )
 
-        col1, col2 = st.columns([1, 3])
+        col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
             extract_button = st.button(
                 "🚀 Extract Recipe",
                 type="primary",
                 disabled=not url_input,
                 key="web_extract_button",
+            )
+        with col2:
+            manual_crop = st.checkbox(
+                "✂️ Manual Crop",
+                value=True,
+                help="Manually select recipe images from the web page",
+                key="web_manual_crop",
             )
 
         if extract_button and url_input:
@@ -849,6 +1075,81 @@ class StreamlitRecipeApp:
 
                     st.success(f"✅ Recipe extracted and saved to: {recipe_dir}")
                     st.session_state.recipe_dir = recipe_dir
+
+                    # Handle image extraction from web page
+                    if manual_crop:
+                        st.info(
+                            "Downloading images from web page for manual cropping..."
+                        )
+
+                        try:
+                            # Download images from the web page
+                            web_images = WebImageExtractor.download_images_from_url(
+                                url_input
+                            )
+
+                            if web_images:
+                                st.success(
+                                    f"Downloaded {len(web_images)} images from the web page."
+                                )
+
+                                # Load images for cropping
+                                images = []
+                                for img_path in web_images:
+                                    pil_img = Image.open(img_path)
+                                    images.append((img_path, pil_img))
+
+                                # Initialize cropper
+                                cropper = StreamlitImageCropper()
+
+                                # Perform cropping
+                                st.write("### Manual Image Cropping")
+                                st.write("Select recipe images from the web page.")
+
+                                crop_regions = cropper.crop_multiple_images(
+                                    images, recipe.name
+                                )
+
+                                if crop_regions is not None:
+                                    # Save cropped images
+                                    all_images = {path: img for path, img in images}
+                                    metadata = cropper.save_cropped_images(
+                                        all_images,
+                                        crop_regions,
+                                        recipe.name,
+                                        Path(recipe_dir),
+                                    )
+
+                                    # Update recipe with images
+                                    if metadata["extracted_images"]:
+                                        recipe.images = [
+                                            RecipeImage(
+                                                filename=img["filename"],
+                                                description=img["description"],
+                                                is_main=img["is_main"],
+                                                is_step=img["is_step"],
+                                            )
+                                            for img in metadata["extracted_images"]
+                                        ]
+
+                                        # Update recipe files
+                                        formatter.update_recipe_files(
+                                            recipe, recipe_dir
+                                        )
+                                        st.success(
+                                            f"✅ Saved {len(metadata['extracted_images'])} cropped images!"
+                                        )
+
+                                # Clean up temporary web images
+                                import shutil
+
+                                temp_dir = os.path.dirname(web_images[0])
+                                shutil.rmtree(temp_dir, ignore_errors=True)
+                            else:
+                                st.warning("No suitable images found on the web page.")
+
+                        except Exception as e:
+                            st.error(f"Error during image extraction: {str(e)}")
 
                 except Exception as e:
                     st.error(f"❌ Error extracting recipe: {str(e)}")
@@ -894,10 +1195,17 @@ class StreamlitRecipeApp:
                         st.error(f"❌ Invalid page format: {str(e)}")
                         page_numbers = None
 
-            col1, col2 = st.columns([1, 3])
+            col1, col2, col3 = st.columns([1, 1, 2])
             with col1:
                 extract_button = st.button(
                     "🚀 Extract Recipe", type="primary", key="pdf_extract_button"
+                )
+            with col2:
+                manual_crop = st.checkbox(
+                    "✂️ Manual Crop",
+                    value=True,
+                    help="Manually select recipe images from PDF pages",
+                    key="pdf_manual_crop",
                 )
 
             if extract_button:
@@ -939,6 +1247,89 @@ class StreamlitRecipeApp:
                                 f"✅ Recipe extracted and saved to: {recipe_dir}"
                             )
                             st.session_state.recipe_dir = recipe_dir
+
+                            # Handle image extraction from PDF
+                            if manual_crop:
+                                st.info(
+                                    "Converting PDF pages to images for manual cropping..."
+                                )
+
+                                try:
+                                    # Convert PDF pages to images
+                                    pdf_images = PDFImageExtractor.pdf_to_images(
+                                        tmp_file_path, zero_indexed_pages
+                                    )
+
+                                    if pdf_images:
+                                        st.success(
+                                            f"Converted {len(pdf_images)} PDF pages to images."
+                                        )
+
+                                        # Load images for cropping
+                                        images = []
+                                        for img_path in pdf_images:
+                                            pil_img = Image.open(img_path)
+                                            images.append((img_path, pil_img))
+
+                                        # Initialize cropper
+                                        cropper = StreamlitImageCropper()
+
+                                        # Perform cropping
+                                        st.write("### Manual Image Cropping")
+                                        st.write(
+                                            "Select recipe images from the PDF pages."
+                                        )
+
+                                        crop_regions = cropper.crop_multiple_images(
+                                            images, recipe.name
+                                        )
+
+                                        if crop_regions is not None:
+                                            # Save cropped images
+                                            all_images = {
+                                                path: img for path, img in images
+                                            }
+                                            metadata = cropper.save_cropped_images(
+                                                all_images,
+                                                crop_regions,
+                                                recipe.name,
+                                                Path(recipe_dir),
+                                            )
+
+                                            # Update recipe with images
+                                            if metadata["extracted_images"]:
+                                                recipe.images = [
+                                                    RecipeImage(
+                                                        filename=img["filename"],
+                                                        description=img["description"],
+                                                        is_main=img["is_main"],
+                                                        is_step=img["is_step"],
+                                                    )
+                                                    for img in metadata[
+                                                        "extracted_images"
+                                                    ]
+                                                ]
+
+                                                # Update recipe files
+                                                formatter.update_recipe_files(
+                                                    recipe, recipe_dir
+                                                )
+                                                st.success(
+                                                    f"✅ Saved {len(metadata['extracted_images'])} cropped images!"
+                                                )
+
+                                        # Clean up temporary PDF images
+                                        import shutil
+
+                                        temp_dir = os.path.dirname(pdf_images[0])
+                                        shutil.rmtree(temp_dir, ignore_errors=True)
+                                    else:
+                                        st.warning(
+                                            "No images could be extracted from the PDF."
+                                        )
+
+                                except Exception as e:
+                                    st.error(f"Error during image extraction: {str(e)}")
 
                         finally:
                             # Clean up temporary file

@@ -10,8 +10,11 @@ from .converter import RecipeConverter
 from .extractors.clipboard import ClipboardExtractor
 from .extractors.image import ImageExtractor
 from .extractors.pdf import PDFExtractor
+from .extractors.pdf_image_extractor import PDFImageExtractor
 from .extractors.recipe_image_extractor import RecipeImageExtractor
+from .extractors.recipe_image_extractor_manual import ManualRecipeImageExtractor
 from .extractors.web import WebExtractor
+from .extractors.web_image_extractor import WebImageExtractor
 from .formatter import RecipeFormatter
 from .llm_client import LLMClient
 from .paprika_client import PaprikaClient
@@ -158,8 +161,15 @@ def cli(ctx, api_key, model):
     is_flag=True,
     help="Interactively group images into recipes",
 )
+@click.option(
+    "--manual-crop",
+    is_flag=True,
+    help="Manually draw bounding boxes to crop recipe images",
+)
 @click.pass_context
-def image(ctx, image_paths, output_dir, batch, source, manifest, interactive):
+def image(
+    ctx, image_paths, output_dir, batch, source, manifest, interactive, manual_crop
+):
     """Extract recipes from one or more images.
 
     By default, each image is treated as a separate recipe.
@@ -171,7 +181,12 @@ def image(ctx, image_paths, output_dir, batch, source, manifest, interactive):
     llm_client = LLMClient(api_key=ctx.obj["api_key"], model=ctx.obj["model"])
     image_extractor = ImageExtractor()
     formatter = RecipeFormatter(output_dir)
-    recipe_image_extractor = RecipeImageExtractor(llm_client)
+
+    # Choose image extractor based on manual_crop flag
+    if manual_crop:
+        recipe_image_extractor = ManualRecipeImageExtractor()
+    else:
+        recipe_image_extractor = RecipeImageExtractor(llm_client)
 
     recipes = []
     recipe_groups = {}
@@ -302,8 +317,13 @@ def image(ctx, image_paths, output_dir, batch, source, manifest, interactive):
 @click.option(
     "--output-dir", "-o", default="recipes", help="Output directory for recipe files"
 )
+@click.option(
+    "--manual-crop",
+    is_flag=True,
+    help="Manually draw bounding boxes to crop recipe images from web page",
+)
 @click.pass_context
-def web(ctx, url, output_dir):
+def web(ctx, url, output_dir, manual_crop):
     """Extract a recipe from a web page."""
 
     llm_client = LLMClient(api_key=ctx.obj["api_key"], model=ctx.obj["model"])
@@ -317,9 +337,51 @@ def web(ctx, url, output_dir):
         click.echo("Extracting recipe...")
         recipe = llm_client.extract_recipe(content, url)
 
-        output_path = formatter.save_recipe(recipe)
+        recipe_dir = formatter.save_recipe(recipe)
         click.echo(f"✓ Extracted: {recipe.name}")
-        click.echo(f"Saved to: {output_path}")
+        click.echo(f"Saved to: {recipe_dir}")
+
+        # Handle manual cropping for web images if requested
+        if manual_crop:
+            click.echo("\nDownloading images from web page for manual cropping...")
+            try:
+                # Download images from the web page
+                web_images = WebImageExtractor.download_images_from_url(url)
+
+                if web_images:
+                    # Use manual cropping
+                    manual_extractor = ManualRecipeImageExtractor()
+                    image_metadata = manual_extractor.extract_recipe_images(
+                        web_images, recipe.name, recipe_dir
+                    )
+
+                    # Update recipe with image references
+                    from .models import RecipeImage
+
+                    recipe.images = [
+                        RecipeImage(
+                            filename=img["filename"],
+                            description=img["description"],
+                            is_main=img["is_main"],
+                            is_step=img["is_step"],
+                        )
+                        for img in image_metadata["extracted_images"]
+                    ]
+
+                    # Update existing files with image info
+                    formatter.update_recipe_files(recipe, recipe_dir)
+
+                    # Clean up temporary images
+                    import os
+                    import shutil
+
+                    temp_dir = os.path.dirname(web_images[0])
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                else:
+                    click.echo("No suitable images found on the web page.")
+
+            except Exception as e:
+                click.echo(f"✗ Failed to extract images: {str(e)}", err=True)
 
     except Exception as e:
         click.echo(f"✗ Failed to extract recipe: {str(e)}", err=True)
@@ -331,8 +393,13 @@ def web(ctx, url, output_dir):
 @click.option(
     "--output-dir", "-o", default="recipes", help="Output directory for recipe files"
 )
+@click.option(
+    "--manual-crop",
+    is_flag=True,
+    help="Manually draw bounding boxes to crop recipe images from PDF pages",
+)
 @click.pass_context
-def pdf(ctx, pdf_path, pages, output_dir):
+def pdf(ctx, pdf_path, pages, output_dir, manual_crop):
     """Extract recipes from a PDF file."""
 
     llm_client = LLMClient(api_key=ctx.obj["api_key"], model=ctx.obj["model"])
@@ -357,9 +424,49 @@ def pdf(ctx, pdf_path, pages, output_dir):
         click.echo("Extracting recipe...")
         recipe = llm_client.extract_recipe(content, str(pdf_path))
 
-        output_path = formatter.save_recipe(recipe)
+        recipe_dir = formatter.save_recipe(recipe)
         click.echo(f"✓ Extracted: {recipe.name}")
-        click.echo(f"Saved to: {output_path}")
+        click.echo(f"Saved to: {recipe_dir}")
+
+        # Handle manual cropping for PDF if requested
+        if manual_crop:
+            click.echo("\nConverting PDF pages to images for manual cropping...")
+            try:
+                # Convert PDF pages to images
+                pdf_images = PDFImageExtractor.pdf_to_images(pdf_path, page_numbers)
+
+                if pdf_images:
+                    # Use manual cropping
+                    manual_extractor = ManualRecipeImageExtractor()
+                    image_metadata = manual_extractor.extract_recipe_images(
+                        pdf_images, recipe.name, recipe_dir
+                    )
+
+                    # Update recipe with image references
+                    from .models import RecipeImage
+
+                    recipe.images = [
+                        RecipeImage(
+                            filename=img["filename"],
+                            description=img["description"],
+                            is_main=img["is_main"],
+                            is_step=img["is_step"],
+                        )
+                        for img in image_metadata["extracted_images"]
+                    ]
+
+                    # Update existing files with image info
+                    formatter.update_recipe_files(recipe, recipe_dir)
+
+                    # Clean up temporary images
+                    import os
+                    import shutil
+
+                    temp_dir = os.path.dirname(pdf_images[0])
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+
+            except Exception as e:
+                click.echo(f"✗ Failed to extract images: {str(e)}", err=True)
 
     except Exception as e:
         click.echo(f"✗ Failed to extract recipe: {str(e)}", err=True)
@@ -409,8 +516,13 @@ def clipboard(ctx, output_dir, source):
     "--output-dir", "-o", default="recipes", help="Output directory for recipe files"
 )
 @click.option("--batch", "-b", is_flag=True, help="Save all recipes in a single file")
+@click.option(
+    "--manual-crop",
+    is_flag=True,
+    help="Manually draw bounding boxes to crop recipe images",
+)
 @click.pass_context
-def batch(ctx, input_file, output_dir, batch):
+def batch(ctx, input_file, output_dir, batch, manual_crop):
     """Process multiple inputs from a file (one path/URL per line)."""
 
     llm_client = LLMClient(api_key=ctx.obj["api_key"], model=ctx.obj["model"])
@@ -418,7 +530,12 @@ def batch(ctx, input_file, output_dir, batch):
     web_extractor = WebExtractor()
     pdf_extractor = PDFExtractor()
     formatter = RecipeFormatter(output_dir)
-    recipe_image_extractor = RecipeImageExtractor(llm_client)
+
+    # Choose image extractor based on manual_crop flag
+    if manual_crop:
+        recipe_image_extractor = ManualRecipeImageExtractor()
+    else:
+        recipe_image_extractor = RecipeImageExtractor(llm_client)
 
     recipes = []
     image_paths_by_recipe = {}  # Track image paths for each recipe

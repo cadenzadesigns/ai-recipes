@@ -34,6 +34,14 @@ ZIP_COMPRESSION_LEVEL = 6  # 0-9, 6 is good balance of speed/size
 MAX_ZIP_SIZE = 500 * 1024 * 1024  # 500MB max ZIP file size
 
 # =============================================================================
+# IMAGE EXTRACTION SETTINGS
+# =============================================================================
+
+# Manual cropping settings
+ENABLE_MANUAL_CROPPING = True  # Enable manual cropping feature
+MAX_CROPS_PER_IMAGE = 5  # Maximum number of crop regions per image
+
+# =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 
