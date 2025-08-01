@@ -2,11 +2,11 @@ import base64
 import io
 import json
 import os
-from io import BytesIO
 
 # Import from the existing src modules
 import sys
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from typing import List
 
@@ -164,17 +164,14 @@ class StreamlitRecipeApp:
             uploaded_file.seek(0)  # Reset file pointer
             st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
 
-            col1, col2, col3 = st.columns([1, 1, 2])
+            col1, col2 = st.columns([1, 2])
             with col1:
                 extract_button = st.button(
                     "🚀 Extract Recipe", type="primary", key="single_extract_button"
                 )
-            with col2:
-                manual_crop = st.checkbox(
-                    "✂️ Manual Crop",
-                    value=True,
-                    help="Manually select recipe images to extract",
-                )
+
+            # Manual cropping is always enabled
+            manual_crop = True
 
             if extract_button:
                 with st.spinner("🤖 Extracting recipe using AI..."):
@@ -344,191 +341,305 @@ class StreamlitRecipeApp:
             if len(uploaded_files) > 4:
                 st.write(f"... and {len(uploaded_files) - 4} more files")
 
-            # Processing mode selection
-            st.subheader("Choose Processing Mode")
-            processing_mode = st.radio(
-                "How should these images be processed?",
-                ["single_recipe", "multiple_recipes", "grouped_recipes"],
-                index=0,  # Default to single_recipe (multiple pages per one recipe)
-                format_func=lambda x: {
-                    "multiple_recipes": "🔄 Multiple Recipes - Each image is a separate recipe",
-                    "single_recipe": "📄 Single Multi-Page Recipe - All images are parts of ONE recipe",
-                    "grouped_recipes": "📚 Multiple Multi-Page Recipes - Group images into multiple recipes",
-                }[x],
-                help="Select how to process your uploaded images",
+            # Always use grouped mode - the grouping interface handles all cases
+            processing_mode = "grouped_recipes"
+
+            # Image grouping interface
+            st.subheader("📊 Group Your Images into Recipes")
+            st.info(
+                "✅ Organize your images by recipe. Each group becomes one recipe. "
+                "Create single-page recipes (1 image per group) or multi-page recipes (multiple images per group)."
             )
 
-            # Show relevant example based on selection
-            if processing_mode == "multiple_recipes":
-                st.info(
-                    "✅ Each image will be processed as a separate recipe. Perfect for photographing multiple recipe cards or different pages from a cookbook."
-                )
-            elif processing_mode == "single_recipe":
-                st.info(
-                    "✅ All images will be combined into one recipe. Perfect when a single recipe spans multiple pages/photos."
-                )
-            else:  # grouped_recipes
-                st.info(
-                    "✅ Group your images into multiple recipes. Perfect when you have several multi-page recipes to process at once."
-                )
+            # Initialize saved assignments if not exists
+            if "saved_assignments" not in st.session_state:
+                # Initialize all images to Recipe 1
+                st.session_state.saved_assignments = {
+                    i: 1 for i in range(len(uploaded_files))
+                }
+                st.session_state.num_groups = 1
 
-                # Image grouping interface
-                st.subheader("📊 Group Your Images")
+            # Group controls (outside form)
+            col1, col2, col3 = st.columns([2, 1, 1])
 
-                # Initialize saved assignments if not exists
-                if "saved_assignments" not in st.session_state:
-                    # Initialize all images to Recipe 1
+            with col1:
+                # Use a form to prevent immediate updates
+                with st.form("num_groups_form"):
+                    num_groups_input = st.number_input(
+                        "Number of recipe groups",
+                        min_value=1,
+                        max_value=min(len(uploaded_files), 10),
+                        value=st.session_state.get("num_groups", 1),
+                        help="How many different recipes do you want to create?",
+                    )
+
+                    col_a, col_b = st.columns([1, 1])
+                    with col_a:
+                        save_groups_btn = st.form_submit_button(
+                            "📊 Update Groups",
+                            type="secondary",
+                            use_container_width=True,
+                        )
+
+                    if save_groups_btn:
+                        # Only update when button is clicked
+                        old_num_groups = st.session_state.get("num_groups", 1)
+                        st.session_state.num_groups = num_groups_input
+
+                        # If reducing groups, reassign higher group numbers to group 1
+                        if num_groups_input < old_num_groups:
+                            for idx in st.session_state.saved_assignments:
+                                if (
+                                    st.session_state.saved_assignments[idx]
+                                    > num_groups_input
+                                ):
+                                    st.session_state.saved_assignments[idx] = 1
+
+                        st.rerun()
+
+                # Use the saved value for display
+                num_groups = st.session_state.get("num_groups", 1)
+
+            with col2:
+                if st.button("🔄 Reset All", type="secondary"):
                     st.session_state.saved_assignments = {
                         i: 1 for i in range(len(uploaded_files))
                     }
                     st.session_state.num_groups = 1
+                    st.rerun()
 
-                # Group controls (outside form)
-                col1, col2, col3 = st.columns([2, 1, 1])
+            # Define colors for each recipe group
+            group_colors = [
+                "#FF6B6B",  # Red
+                "#4ECDC4",  # Teal
+                "#45B7D1",  # Blue
+                "#96CEB4",  # Green
+                "#DDA0DD",  # Plum
+                "#F4A460",  # Sandy brown
+                "#98D8C8",  # Mint
+                "#FFD93D",  # Yellow
+                "#C7CEEA",  # Lavender
+                "#FFAAA5",  # Pink
+            ]
 
-                with col1:
-                    # Use a form to prevent immediate updates
-                    with st.form("num_groups_form"):
-                        num_groups_input = st.number_input(
-                            "Number of recipe groups",
-                            min_value=1,
-                            max_value=min(len(uploaded_files), 10),
-                            value=st.session_state.get("num_groups", 1),
-                            help="How many different recipes do you want to create?",
-                        )
-                        
-                        col_a, col_b = st.columns([1, 1])
-                        with col_a:
-                            save_groups_btn = st.form_submit_button(
-                                "📊 Update Groups",
-                                type="secondary",
-                                use_container_width=True
-                            )
-                        
-                        if save_groups_btn:
-                            # Only update when button is clicked
-                            old_num_groups = st.session_state.get("num_groups", 1)
-                            st.session_state.num_groups = num_groups_input
-                            
-                            # If reducing groups, reassign higher group numbers to group 1
-                            if num_groups_input < old_num_groups:
-                                for idx in st.session_state.saved_assignments:
-                                    if st.session_state.saved_assignments[idx] > num_groups_input:
-                                        st.session_state.saved_assignments[idx] = 1
-                            
-                            st.rerun()
-                    
-                    # Use the saved value for display
-                    num_groups = st.session_state.get("num_groups", 1)
+            # Show color legend
+            st.markdown("### Recipe Groups")
+            st.caption("Select images below, then click Save Groups when done")
+            legend_cols = st.columns(min(num_groups, 5))
+            for i in range(num_groups):
+                with legend_cols[i % len(legend_cols)]:
+                    color = group_colors[i % len(group_colors)]
+                    st.markdown(
+                        f'<div style="background-color: {color}; padding: 10px; border-radius: 5px; text-align: center; color: white; font-weight: bold;">Recipe {i+1}</div>',
+                        unsafe_allow_html=True,
+                    )
 
+            st.markdown("---")
+
+            # Create thumbnail cache if not exists
+            if "thumbnail_cache" not in st.session_state:
+                st.session_state.thumbnail_cache = {}
+
+            # Sort files by filename
+            sorted_indices = sorted(
+                range(len(uploaded_files)),
+                key=lambda i: uploaded_files[i].name.lower(),
+            )
+
+            # Use a form to prevent reruns on each radio button change
+            with st.form("image_grouping_form"):
+                st.markdown("### Your Images")
+
+                # Track selections in the form
+                form_selections = {}
+
+                # Display images in rows of 4
+                images_per_row = 4
+                num_rows = (len(sorted_indices) + images_per_row - 1) // images_per_row
+
+                for row in range(num_rows):
+                    cols = st.columns(images_per_row)
+
+                    for col_idx in range(images_per_row):
+                        list_idx = row * images_per_row + col_idx
+
+                        if list_idx < len(sorted_indices):
+                            img_idx = sorted_indices[list_idx]
+
+                            with cols[col_idx]:
+                                file = uploaded_files[img_idx]
+
+                                # Get or create thumbnail
+                                if img_idx not in st.session_state.thumbnail_cache:
+                                    file.seek(0)
+                                    thumbnail = create_thumbnail(
+                                        file.read(), file.name, size=(300, 300)
+                                    )
+                                    st.session_state.thumbnail_cache[img_idx] = (
+                                        thumbnail
+                                    )
+                                    file.seek(0)
+                                else:
+                                    thumbnail = st.session_state.thumbnail_cache[
+                                        img_idx
+                                    ]
+
+                                # Get current assignment from saved assignments
+                                saved_group = st.session_state.saved_assignments.get(
+                                    img_idx, 1
+                                )
+
+                                # During form editing, we don't show colored borders
+                                # Only show gray borders to indicate the image container
+
+                                # Convert image to base64 for inline display
+                                buffered = BytesIO()
+                                thumbnail.save(buffered, format="PNG")
+                                img_str = base64.b64encode(buffered.getvalue()).decode()
+
+                                # Display image with gray border
+                                st.markdown(
+                                    f"""
+                                    <div style="
+                                        border: 3px solid #E0E0E0;
+                                        border-radius: 8px;
+                                        padding: 4px;
+                                        background-color: white;
+                                        margin-bottom: 8px;
+                                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                                    ">
+                                        <img src="data:image/png;base64,{img_str}" style="
+                                            width: 100%;
+                                            border-radius: 4px;
+                                            display: block;
+                                        ">
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True,
+                                )
+
+                                # Display filename
+                                st.caption(
+                                    f"{file.name[:20]}..."
+                                    if len(file.name) > 20
+                                    else file.name
+                                )
+
+                                # Recipe assignment radio buttons
+                                selected_group = st.radio(
+                                    "Recipe",
+                                    options=list(range(1, num_groups + 1)),
+                                    index=saved_group - 1,
+                                    key=f"form_radio_{img_idx}",
+                                    format_func=lambda x: f"R{x}",
+                                    horizontal=True,
+                                    label_visibility="collapsed",
+                                )
+
+                                # Store the selection
+                                form_selections[img_idx] = selected_group
+
+                # Form submit button
+                st.markdown("---")
+                col1, col2, col3 = st.columns([1, 1, 1])
                 with col2:
-                    if st.button("🔄 Reset All", type="secondary"):
-                        st.session_state.saved_assignments = {
-                            i: 1 for i in range(len(uploaded_files))
-                        }
-                        st.session_state.num_groups = 1
-                        st.rerun()
+                    submitted = st.form_submit_button(
+                        "💾 Save Groups",
+                        type="primary",
+                        use_container_width=True,
+                    )
 
-                # Define colors for each recipe group
-                group_colors = [
-                    "#FF6B6B",  # Red
-                    "#4ECDC4",  # Teal
-                    "#45B7D1",  # Blue
-                    "#96CEB4",  # Green
-                    "#DDA0DD",  # Plum
-                    "#F4A460",  # Sandy brown
-                    "#98D8C8",  # Mint
-                    "#FFD93D",  # Yellow
-                    "#C7CEEA",  # Lavender
-                    "#FFAAA5",  # Pink
-                ]
+                if submitted:
+                    # Update saved assignments with form selections
+                    for img_idx, group in form_selections.items():
+                        st.session_state.saved_assignments[img_idx] = group
+                    # Mark that groups have been saved at least once
+                    st.session_state.groups_saved_once = True
+                    st.success("✅ Groups saved!")
+                    st.rerun()
 
-                # Show color legend
-                st.markdown("### Recipe Groups")
-                st.caption("Select images below, then click Save Groups when done")
-                legend_cols = st.columns(min(num_groups, 5))
-                for i in range(num_groups):
-                    with legend_cols[i % len(legend_cols)]:
-                        color = group_colors[i % len(group_colors)]
+            # Show summary (outside form) - only after groups have been saved at least once
+            if st.session_state.get("groups_saved_once", False):
+                st.markdown("---")
+                st.markdown("### Saved Groups")
+
+                # Count images per group (from saved assignments)
+                group_counts = {}
+                for group_num in range(1, num_groups + 1):
+                    count = sum(
+                        1
+                        for v in st.session_state.saved_assignments.values()
+                        if v == group_num
+                    )
+                    group_counts[group_num] = count
+
+                summary_cols = st.columns(min(num_groups, 4))
+                for i, (group_num, count) in enumerate(group_counts.items()):
+                    with summary_cols[i % len(summary_cols)]:
+                        color = group_colors[(group_num - 1) % len(group_colors)]
                         st.markdown(
-                            f'<div style="background-color: {color}; padding: 10px; border-radius: 5px; text-align: center; color: white; font-weight: bold;">Recipe {i+1}</div>',
+                            f'<div style="background-color: {color}; padding: 20px; border-radius: 8px; text-align: center; color: white;">'
+                            f'<h3 style="margin: 0;">Recipe {group_num}</h3>'
+                            f'<h1 style="margin: 0;">{count}</h1>'
+                            f'<p style="margin: 0;">images</p>'
+                            f"</div>",
                             unsafe_allow_html=True,
                         )
 
+                # Show saved assignments with colored borders
                 st.markdown("---")
+                st.markdown("### Saved Assignments")
+                st.caption("Images are shown with their assigned recipe group colors")
 
-                # Create thumbnail cache if not exists
-                if "thumbnail_cache" not in st.session_state:
-                    st.session_state.thumbnail_cache = {}
+                # Display images in rows of 6 for the summary view
+                summary_images_per_row = 6
+                num_summary_rows = (
+                    len(sorted_indices) + summary_images_per_row - 1
+                ) // summary_images_per_row
 
-                # Sort files by filename
-                sorted_indices = sorted(
-                    range(len(uploaded_files)),
-                    key=lambda i: uploaded_files[i].name.lower(),
-                )
+                for row in range(num_summary_rows):
+                    cols = st.columns(summary_images_per_row)
 
-                # Use a form to prevent reruns on each radio button change
-                with st.form("image_grouping_form"):
-                    st.markdown("### Your Images")
+                    for col_idx in range(summary_images_per_row):
+                        list_idx = row * summary_images_per_row + col_idx
 
-                    # Track selections in the form
-                    form_selections = {}
+                        if list_idx < len(sorted_indices):
+                            img_idx = sorted_indices[list_idx]
 
-                    # Display images in rows of 4
-                    images_per_row = 4
-                    num_rows = (
-                        len(sorted_indices) + images_per_row - 1
-                    ) // images_per_row
+                            with cols[col_idx]:
+                                file = uploaded_files[img_idx]
 
-                    for row in range(num_rows):
-                        cols = st.columns(images_per_row)
-
-                        for col_idx in range(images_per_row):
-                            list_idx = row * images_per_row + col_idx
-
-                            if list_idx < len(sorted_indices):
-                                img_idx = sorted_indices[list_idx]
-
-                                with cols[col_idx]:
-                                    file = uploaded_files[img_idx]
-
-                                    # Get or create thumbnail
-                                    if img_idx not in st.session_state.thumbnail_cache:
-                                        file.seek(0)
-                                        thumbnail = create_thumbnail(
-                                            file.read(), file.name, size=(300, 300)
+                                # Get thumbnail from cache
+                                thumbnail = st.session_state.thumbnail_cache.get(
+                                    img_idx
+                                )
+                                if thumbnail:
+                                    # Get saved group assignment
+                                    saved_group = (
+                                        st.session_state.saved_assignments.get(
+                                            img_idx, 1
                                         )
-                                        st.session_state.thumbnail_cache[img_idx] = (
-                                            thumbnail
-                                        )
-                                        file.seek(0)
-                                    else:
-                                        thumbnail = st.session_state.thumbnail_cache[
-                                            img_idx
-                                        ]
-
-                                    # Get current assignment from saved assignments
-                                    saved_group = st.session_state.saved_assignments.get(
-                                        img_idx, 1
                                     )
-                                    
-                                    # During form editing, we don't show colored borders
-                                    # Only show gray borders to indicate the image container
-                                    
-                                    # Convert image to base64 for inline display
+                                    group_color = group_colors[
+                                        (saved_group - 1) % len(group_colors)
+                                    ]
+
+                                    # Convert image to base64
                                     buffered = BytesIO()
                                     thumbnail.save(buffered, format="PNG")
-                                    img_str = base64.b64encode(buffered.getvalue()).decode()
-                                    
-                                    # Display image with gray border
+                                    img_str = base64.b64encode(
+                                        buffered.getvalue()
+                                    ).decode()
+
+                                    # Display image with colored border
                                     st.markdown(
                                         f"""
                                         <div style="
-                                            border: 3px solid #E0E0E0;
+                                            border: 3px solid {group_color};
                                             border-radius: 8px;
-                                            padding: 4px;
+                                            padding: 3px;
                                             background-color: white;
-                                            margin-bottom: 8px;
+                                            margin-bottom: 4px;
                                             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                                         ">
                                             <img src="data:image/png;base64,{img_str}" style="
@@ -537,173 +648,44 @@ class StreamlitRecipeApp:
                                                 display: block;
                                             ">
                                         </div>
+                                        <p style="text-align: center; font-size: 11px; margin: 2px 0; color: {group_color}; font-weight: bold;">R{saved_group}</p>
                                         """,
                                         unsafe_allow_html=True,
                                     )
 
-                                    # Display filename
-                                    st.caption(
-                                        f"{file.name[:20]}..."
-                                        if len(file.name) > 20
-                                        else file.name
-                                    )
+            # Create recipe_groups list from saved assignments
+            st.session_state.recipe_groups = []
+            for group_num in range(1, num_groups + 1):
+                group_indices = [
+                    idx
+                    for idx, g in st.session_state.saved_assignments.items()
+                    if g == group_num
+                ]
+                if group_indices:
+                    st.session_state.recipe_groups.append(group_indices)
 
-                                    # Recipe assignment radio buttons
-                                    selected_group = st.radio(
-                                        "Recipe",
-                                        options=list(range(1, num_groups + 1)),
-                                        index=saved_group - 1,
-                                        key=f"form_radio_{img_idx}",
-                                        format_func=lambda x: f"R{x}",
-                                        horizontal=True,
-                                        label_visibility="collapsed",
-                                    )
-
-                                    # Store the selection
-                                    form_selections[img_idx] = selected_group
-
-                    # Form submit button
-                    st.markdown("---")
-                    col1, col2, col3 = st.columns([1, 1, 1])
-                    with col2:
-                        submitted = st.form_submit_button(
-                            "💾 Save Groups",
-                            type="primary",
-                            use_container_width=True,
-                        )
-
-                    if submitted:
-                        # Update saved assignments with form selections
-                        for img_idx, group in form_selections.items():
-                            st.session_state.saved_assignments[img_idx] = group
-                        # Mark that groups have been saved at least once
-                        st.session_state.groups_saved_once = True
-                        st.success("✅ Groups saved!")
-                        st.rerun()
-
-                # Show summary (outside form) - only after groups have been saved at least once
-                if st.session_state.get("groups_saved_once", False):
-                    st.markdown("---")
-                    st.markdown("### Saved Groups")
-
-                    # Count images per group (from saved assignments)
-                    group_counts = {}
-                    for group_num in range(1, num_groups + 1):
-                        count = sum(
-                            1
-                            for v in st.session_state.saved_assignments.values()
-                            if v == group_num
-                        )
-                        group_counts[group_num] = count
-
-                    summary_cols = st.columns(min(num_groups, 4))
-                    for i, (group_num, count) in enumerate(group_counts.items()):
-                        with summary_cols[i % len(summary_cols)]:
-                            color = group_colors[(group_num - 1) % len(group_colors)]
-                            st.markdown(
-                                f'<div style="background-color: {color}; padding: 20px; border-radius: 8px; text-align: center; color: white;">'
-                                f'<h3 style="margin: 0;">Recipe {group_num}</h3>'
-                                f'<h1 style="margin: 0;">{count}</h1>'
-                                f'<p style="margin: 0;">images</p>'
-                                f"</div>",
-                                unsafe_allow_html=True,
-                            )
-
-                    # Show saved assignments with colored borders
-                    st.markdown("---")
-                    st.markdown("### Saved Assignments")
-                    st.caption("Images are shown with their assigned recipe group colors")
-                    
-                    # Display images in rows of 6 for the summary view
-                    summary_images_per_row = 6
-                    num_summary_rows = (
-                        len(sorted_indices) + summary_images_per_row - 1
-                    ) // summary_images_per_row
-                    
-                    for row in range(num_summary_rows):
-                        cols = st.columns(summary_images_per_row)
-                        
-                        for col_idx in range(summary_images_per_row):
-                            list_idx = row * summary_images_per_row + col_idx
-                            
-                            if list_idx < len(sorted_indices):
-                                img_idx = sorted_indices[list_idx]
-                                
-                                with cols[col_idx]:
-                                    file = uploaded_files[img_idx]
-                                    
-                                    # Get thumbnail from cache
-                                    thumbnail = st.session_state.thumbnail_cache.get(img_idx)
-                                    if thumbnail:
-                                        # Get saved group assignment
-                                        saved_group = st.session_state.saved_assignments.get(
-                                            img_idx, 1
-                                        )
-                                        group_color = group_colors[
-                                            (saved_group - 1) % len(group_colors)
-                                        ]
-                                        
-                                        # Convert image to base64
-                                        buffered = BytesIO()
-                                        thumbnail.save(buffered, format="PNG")
-                                        img_str = base64.b64encode(buffered.getvalue()).decode()
-                                        
-                                        # Display image with colored border
-                                        st.markdown(
-                                            f"""
-                                            <div style="
-                                                border: 3px solid {group_color};
-                                                border-radius: 8px;
-                                                padding: 3px;
-                                                background-color: white;
-                                                margin-bottom: 4px;
-                                                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                                            ">
-                                                <img src="data:image/png;base64,{img_str}" style="
-                                                    width: 100%;
-                                                    border-radius: 4px;
-                                                    display: block;
-                                                ">
-                                            </div>
-                                            <p style="text-align: center; font-size: 11px; margin: 2px 0; color: {group_color}; font-weight: bold;">R{saved_group}</p>
-                                            """,
-                                            unsafe_allow_html=True,
-                                        )
-
-                # Create recipe_groups list from saved assignments
-                st.session_state.recipe_groups = []
-                for group_num in range(1, num_groups + 1):
-                    group_indices = [
-                        idx
-                        for idx, g in st.session_state.saved_assignments.items()
-                        if g == group_num
-                    ]
-                    if group_indices:
-                        st.session_state.recipe_groups.append(group_indices)
-
-            # Manual cropping option
+            # Manual cropping is always enabled
             st.markdown("---")
-            st.subheader("🖼️ Image Processing Options")
-            
-            manual_crop = st.checkbox(
-                "📐 Manual image cropping",
-                value=False,
-                help="Manually select the main image and additional images from each recipe using bounding boxes"
+            st.subheader("🖼️ Image Processing")
+            st.info(
+                "✨ You'll manually select recipe images using an interactive cropping interface before text extraction."
             )
-            
-            if manual_crop:
-                st.info("✨ You'll manually select recipe images before text extraction using an interactive cropping interface.")
 
             # Initialize extract_button to avoid UnboundLocalError
             extract_button = False
-            
-            # Determine the workflow based on manual cropping
-            if manual_crop and st.session_state.get("crop_step_completed", False) == False:
+
+            # Always use manual cropping workflow
+            manual_crop = (
+                True  # Keep this for backward compatibility with existing code
+            )
+
+            # Determine the workflow based on cropping completion
+            if not st.session_state.get("crop_step_completed", False):
                 # Step 1: Manual Cropping (if enabled and not completed)
                 col1, col2 = st.columns([1, 3])
                 with col1:
                     crop_button_text = "🖼️ Start Manual Cropping"
-                    
+
                     # Disable button if in grouped mode and no valid groups
                     disabled = False
                     if processing_mode == "grouped_recipes":
@@ -715,11 +697,11 @@ class StreamlitRecipeApp:
                     crop_button = st.button(
                         crop_button_text, type="primary", disabled=disabled
                     )
-                    
+
                 if crop_button:
                     st.session_state.crop_step_active = True
                     st.rerun()
-                    
+
             else:
                 # Step 2: Extract Recipes (either manual crop completed or no manual crop)
                 col1, col2 = st.columns([1, 3])
@@ -747,52 +729,70 @@ class StreamlitRecipeApp:
             if manual_crop and st.session_state.get("crop_step_active", False):
                 st.markdown("---")
                 st.subheader("🖼️ Manual Image Cropping")
-                
+
                 # Show which recipe groups we'll be cropping
                 if processing_mode == "grouped_recipes":
-                    valid_groups = [g for g in st.session_state.get("recipe_groups", []) if g]
-                    st.info(f"📚 You'll crop images for {len(valid_groups)} recipe groups.")
-                    
+                    valid_groups = [
+                        g for g in st.session_state.get("recipe_groups", []) if g
+                    ]
+                    st.info(
+                        f"📚 You'll crop images for {len(valid_groups)} recipe groups."
+                    )
+
                     # Initialize cropping state
                     if "current_group_crop" not in st.session_state:
                         st.session_state.current_group_crop = 0
-                    
+
                     current_group = st.session_state.current_group_crop
-                    
+
                     if current_group < len(valid_groups):
                         group_indices = valid_groups[current_group]
-                        
-                        st.write(f"### Recipe Group {current_group + 1} of {len(valid_groups)}")
+
+                        st.write(
+                            f"### Recipe Group {current_group + 1} of {len(valid_groups)}"
+                        )
                         st.write(f"**Images in this group:** {len(group_indices)}")
-                        
+
                         # Show thumbnails of images in this group
                         cols = st.columns(min(len(group_indices), 4))
                         for i, img_idx in enumerate(group_indices):
                             with cols[i % len(cols)]:
-                                st.image(uploaded_files[img_idx], caption=uploaded_files[img_idx].name, use_container_width=True)
-                        
+                                st.image(
+                                    uploaded_files[img_idx],
+                                    caption=uploaded_files[img_idx].name,
+                                    use_container_width=True,
+                                )
+
                         # Initialize current image cropping
                         if "current_image_crop" not in st.session_state:
                             st.session_state.current_image_crop = 0
-                            
+
                         current_img_idx_in_group = st.session_state.current_image_crop
-                        
+
                         if current_img_idx_in_group < len(group_indices):
                             img_idx = group_indices[current_img_idx_in_group]
                             uploaded_file = uploaded_files[img_idx]
-                            
-                            st.write(f"#### Cropping Image {current_img_idx_in_group + 1} of {len(group_indices)}: {uploaded_file.name}")
-                            
+
+                            st.write(
+                                f"#### Cropping Image {current_img_idx_in_group + 1} of {len(group_indices)}: {uploaded_file.name}"
+                            )
+
                             # Load and display the image for cropping
                             image = Image.open(uploaded_file)
                             cropper = StreamlitImageCropper()
-                            
+
                             # Use a unique key for each image
-                            image_key = f"group_{current_group}_img_{current_img_idx_in_group}"
-                            crops = cropper.crop_single_image_canvas(image, image_key, max_crops=5)
-                            
+                            image_key = (
+                                f"group_{current_group}_img_{current_img_idx_in_group}"
+                            )
+                            crops = cropper.crop_single_image_canvas(
+                                image, image_key, max_crops=5
+                            )
+
                             # Check if the user clicked "Done with Page"
-                            if st.session_state.get(f"{image_key}_page_complete", False):
+                            if st.session_state.get(
+                                f"{image_key}_page_complete", False
+                            ):
                                 # Clear the done flag
                                 st.session_state[f"{image_key}_page_complete"] = False
                                 # Navigate to next image or group
@@ -807,79 +807,105 @@ class StreamlitRecipeApp:
                                     else:
                                         st.session_state.crop_step_completed = True
                                         st.session_state.crop_step_active = False
-                                        st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                        st.success(
+                                            "🎉 Manual cropping completed! Now you can extract the recipes."
+                                        )
                                         st.rerun()
-                            
+
                             # Navigation buttons
                             col1, col2, col3 = st.columns([1, 1, 1])
-                            
+
                             with col1:
                                 if current_img_idx_in_group > 0:
                                     if st.button("⬅️ Previous Image"):
                                         st.session_state.current_image_crop -= 1
                                         st.rerun()
-                            
+
                             with col2:
                                 # Always allow navigation, don't require crops
                                 if current_img_idx_in_group < len(group_indices) - 1:
                                     if st.button("Next Image ➡️"):
                                         st.session_state.current_image_crop += 1
                                         st.rerun()
-                                else:
-                                    if current_group < len(valid_groups) - 1:
-                                        if st.button("Next Recipe Group ➡️"):
-                                            st.session_state.current_group_crop += 1
-                                            st.session_state.current_image_crop = 0
-                                            st.rerun()
-                                    else:
-                                        if st.button("✅ Finish Cropping", type="primary"):
-                                            st.session_state.crop_step_completed = True
-                                            st.session_state.crop_step_active = False
-                                            st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
-                                            st.rerun()
-                            
-                            with col3:
-                                if st.button("⏭️ Skip This Image"):
-                                    if current_img_idx_in_group < len(group_indices) - 1:
-                                        st.session_state.current_image_crop += 1
+                                # Always show recipe group navigation if there are more groups
+                                elif current_group < len(valid_groups) - 1:
+                                    if st.button("Next Recipe Group ➡️", type="primary"):
+                                        st.session_state.current_group_crop += 1
+                                        st.session_state.current_image_crop = 0
                                         st.rerun()
-                                    else:
-                                        if current_group < len(valid_groups) - 1:
-                                            st.session_state.current_group_crop += 1
-                                            st.session_state.current_image_crop = 0
-                                            st.rerun()
-                                        else:
-                                            st.session_state.crop_step_completed = True
-                                            st.session_state.crop_step_active = False
-                                            st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
-                                            st.rerun()
-                                            
+                                else:
+                                    if st.button("✅ Finish Cropping", type="primary"):
+                                        st.session_state.crop_step_completed = True
+                                        st.session_state.crop_step_active = False
+                                        st.success(
+                                            "🎉 Manual cropping completed! Now you can extract the recipes."
+                                        )
+                                        st.rerun()
+
+                            with col3:
+                                # Always show both options - skip to next (if available) and finish
+                                col3_buttons = []
+
+                                # Show skip to next recipe group if available
+                                if current_group < len(valid_groups) - 1:
+                                    if st.button("⏭️ Skip to Next Recipe"):
+                                        st.session_state.current_group_crop += 1
+                                        st.session_state.current_image_crop = 0
+                                        st.rerun()
+                                    col3_buttons.append("skip")
+
+                                # Always show finish cropping button
+                                help_text = (
+                                    "Complete cropping and proceed to extraction"
+                                    if current_group == len(valid_groups) - 1
+                                    else "Finish early and proceed to extraction"
+                                )
+                                if st.button(
+                                    "✅ Finish Cropping",
+                                    type=(
+                                        "primary"
+                                        if current_group == len(valid_groups) - 1
+                                        else "secondary"
+                                    ),
+                                    help=help_text,
+                                ):
+                                    st.session_state.crop_step_completed = True
+                                    st.session_state.crop_step_active = False
+                                    st.success(
+                                        "🎉 Manual cropping completed! Now you can extract the recipes."
+                                    )
+                                    st.rerun()
+
                 elif processing_mode == "single_recipe":
                     st.info("📄 You'll crop images for 1 combined recipe.")
                     # Handle single recipe cropping
                     if "current_image_crop" not in st.session_state:
                         st.session_state.current_image_crop = 0
-                        
+
                     current_img_idx = st.session_state.current_image_crop
-                    
+
                     if current_img_idx < len(uploaded_files):
                         uploaded_file = uploaded_files[current_img_idx]
-                        st.write(f"#### Cropping Image {current_img_idx + 1} of {len(uploaded_files)}: {uploaded_file.name}")
-                        
+                        st.write(
+                            f"#### Cropping Image {current_img_idx + 1} of {len(uploaded_files)}: {uploaded_file.name}"
+                        )
+
                         image = Image.open(uploaded_file)
                         cropper = StreamlitImageCropper()
                         image_key = f"single_img_{current_img_idx}"
-                        crops = cropper.crop_single_image_canvas(image, image_key, max_crops=5)
-                        
+                        crops = cropper.crop_single_image_canvas(
+                            image, image_key, max_crops=5
+                        )
+
                         # Navigation buttons
                         col1, col2, col3 = st.columns([1, 1, 1])
-                        
+
                         with col1:
                             if current_img_idx > 0:
                                 if st.button("⬅️ Previous Image"):
                                     st.session_state.current_image_crop -= 1
                                     st.rerun()
-                        
+
                         with col2:
                             if current_img_idx < len(uploaded_files) - 1:
                                 if st.button("Next Image ➡️"):
@@ -889,9 +915,11 @@ class StreamlitRecipeApp:
                                 if st.button("✅ Finish Cropping", type="primary"):
                                     st.session_state.crop_step_completed = True
                                     st.session_state.crop_step_active = False
-                                    st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                    st.success(
+                                        "🎉 Manual cropping completed! Now you can extract the recipes."
+                                    )
                                     st.rerun()
-                        
+
                         with col3:
                             if st.button("⏭️ Skip This Image"):
                                 if current_img_idx < len(uploaded_files) - 1:
@@ -900,35 +928,41 @@ class StreamlitRecipeApp:
                                 else:
                                     st.session_state.crop_step_completed = True
                                     st.session_state.crop_step_active = False
-                                    st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                    st.success(
+                                        "🎉 Manual cropping completed! Now you can extract the recipes."
+                                    )
                                     st.rerun()
-                    
+
                 else:  # multiple_recipes
                     st.info("🔄 You'll crop images for each individual recipe.")
                     # Handle multiple recipes cropping (similar to single recipe)
                     if "current_image_crop" not in st.session_state:
                         st.session_state.current_image_crop = 0
-                        
+
                     current_img_idx = st.session_state.current_image_crop
-                    
+
                     if current_img_idx < len(uploaded_files):
                         uploaded_file = uploaded_files[current_img_idx]
-                        st.write(f"#### Cropping Recipe {current_img_idx + 1} of {len(uploaded_files)}: {uploaded_file.name}")
-                        
+                        st.write(
+                            f"#### Cropping Recipe {current_img_idx + 1} of {len(uploaded_files)}: {uploaded_file.name}"
+                        )
+
                         image = Image.open(uploaded_file)
                         cropper = StreamlitImageCropper()
                         image_key = f"multi_img_{current_img_idx}"
-                        crops = cropper.crop_single_image_canvas(image, image_key, max_crops=5)
-                        
+                        crops = cropper.crop_single_image_canvas(
+                            image, image_key, max_crops=5
+                        )
+
                         # Navigation buttons
                         col1, col2, col3 = st.columns([1, 1, 1])
-                        
+
                         with col1:
                             if current_img_idx > 0:
                                 if st.button("⬅️ Previous Recipe"):
                                     st.session_state.current_image_crop -= 1
                                     st.rerun()
-                        
+
                         with col2:
                             if current_img_idx < len(uploaded_files) - 1:
                                 if st.button("Next Recipe ➡️"):
@@ -938,9 +972,11 @@ class StreamlitRecipeApp:
                                 if st.button("✅ Finish Cropping", type="primary"):
                                     st.session_state.crop_step_completed = True
                                     st.session_state.crop_step_active = False
-                                    st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                    st.success(
+                                        "🎉 Manual cropping completed! Now you can extract the recipes."
+                                    )
                                     st.rerun()
-                        
+
                         with col3:
                             if st.button("⏭️ Skip This Recipe"):
                                 if current_img_idx < len(uploaded_files) - 1:
@@ -949,7 +985,9 @@ class StreamlitRecipeApp:
                                 else:
                                     st.session_state.crop_step_completed = True
                                     st.session_state.crop_step_active = False
-                                    st.success("🎉 Manual cropping completed! Now you can extract the recipes.")
+                                    st.success(
+                                        "🎉 Manual cropping completed! Now you can extract the recipes."
+                                    )
                                     st.rerun()
 
             if extract_button:
@@ -1030,50 +1068,95 @@ class StreamlitRecipeApp:
                                     # Use pre-cropped images from the manual cropping step
                                     status_text.text("Using manually cropped images...")
                                     progress_bar.progress(0.8)
-                                    
+
                                     extracted_images = []
-                                    
+
+                                    # Save original images to /images/originals
+                                    originals_dir = os.path.join(
+                                        recipe_dir, "images", "originals"
+                                    )
+                                    os.makedirs(originals_dir, exist_ok=True)
+
+                                    for i, (temp_path, uploaded_file) in enumerate(
+                                        zip(temp_paths, uploaded_files)
+                                    ):
+                                        # Save original image with original filename
+                                        original_path = os.path.join(
+                                            originals_dir, uploaded_file.name
+                                        )
+                                        Image.open(temp_path).save(original_path)
+
                                     # Retrieve cropped images from session state
                                     for i, temp_path in enumerate(temp_paths):
                                         image_key = f"single_img_{i}"
-                                        
+
                                         if image_key in st.session_state.crop_regions:
-                                            crops = st.session_state.crop_regions[image_key]
-                                            
+                                            crops = st.session_state.crop_regions[
+                                                image_key
+                                            ]
+
                                             for j, crop_info in enumerate(crops):
-                                                if crop_info.get('cropped_image'):
-                                                    # Save the cropped image
-                                                    cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}.png"
-                                                    cropped_path = os.path.join(recipe_dir, "images", cropped_filename)
-                                                    
+                                                if crop_info.get("cropped_image"):
+                                                    # Save the cropped image with _main or _step suffix
+                                                    suffix = (
+                                                        "_main"
+                                                        if crop_info.get(
+                                                            "is_main", False
+                                                        )
+                                                        else "_step"
+                                                    )
+                                                    cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}{suffix}.png"
+                                                    cropped_path = os.path.join(
+                                                        recipe_dir,
+                                                        "images",
+                                                        cropped_filename,
+                                                    )
+
                                                     # Ensure images directory exists
-                                                    os.makedirs(os.path.dirname(cropped_path), exist_ok=True)
-                                                    
+                                                    os.makedirs(
+                                                        os.path.dirname(cropped_path),
+                                                        exist_ok=True,
+                                                    )
+
                                                     # Save the pre-cropped image
-                                                    crop_info['cropped_image'].save(cropped_path)
-                                                    
-                                                    extracted_images.append({
-                                                        "filename": cropped_filename,
-                                                        "description": crop_info.get('description', ''),
-                                                        "is_main": crop_info.get('is_main', len(extracted_images) == 0),
-                                                        "is_step": not crop_info.get('is_main', len(extracted_images) == 0),
-                                                    })
-                                    
+                                                    crop_info["cropped_image"].save(
+                                                        cropped_path
+                                                    )
+
+                                                    extracted_images.append(
+                                                        {
+                                                            "filename": cropped_filename,
+                                                            "description": crop_info.get(
+                                                                "description", ""
+                                                            ),
+                                                            "is_main": crop_info.get(
+                                                                "is_main",
+                                                                len(extracted_images)
+                                                                == 0,
+                                                            ),
+                                                            "is_step": not crop_info.get(
+                                                                "is_main",
+                                                                len(extracted_images)
+                                                                == 0,
+                                                            ),
+                                                        }
+                                                    )
+
                                     # Create metadata
-                                    image_metadata = {"extracted_images": extracted_images}
-                                    
+                                    image_metadata = {
+                                        "extracted_images": extracted_images
+                                    }
+
                                 else:
                                     # Use automatic image extraction
                                     recipe_image_extractor = RecipeImageExtractor(
                                         llm_client
                                     )
-                                    image_metadata = (
-                                        recipe_image_extractor.extract_recipe_images(
-                                            temp_paths,
-                                            recipe.name,
-                                            recipe_dir,
-                                            progress_callback=extraction_progress_callback,
-                                        )
+                                    image_metadata = recipe_image_extractor.extract_recipe_images(
+                                        temp_paths,
+                                        recipe.name,
+                                        recipe_dir,
+                                        progress_callback=extraction_progress_callback,
                                     )
                                 progress_bar.progress(0.95)
 
@@ -1167,43 +1250,103 @@ class StreamlitRecipeApp:
                                     if manual_crop:
                                         # Use pre-cropped images from the manual cropping step
                                         extracted_images = []
-                                        
+
+                                        # Save original images to /images/originals
+                                        originals_dir = os.path.join(
+                                            recipe_dir, "images", "originals"
+                                        )
+                                        os.makedirs(originals_dir, exist_ok=True)
+
+                                        # Save originals for this group
+                                        for relative_idx, img_idx in enumerate(
+                                            image_indices
+                                        ):
+                                            original_file = uploaded_files[img_idx]
+                                            temp_path = temp_paths[relative_idx]
+                                            original_path = os.path.join(
+                                                originals_dir, original_file.name
+                                            )
+                                            Image.open(temp_path).save(original_path)
+
                                         # Get the images for this group from the original image indices
-                                        for relative_idx, img_idx in enumerate(image_indices):
-                                            image_key = f"group_{group_idx}_img_{relative_idx}"
-                                            
-                                            if image_key in st.session_state.crop_regions:
-                                                crops = st.session_state.crop_regions[image_key]
-                                                
+                                        for relative_idx, img_idx in enumerate(
+                                            image_indices
+                                        ):
+                                            image_key = (
+                                                f"group_{group_idx}_img_{relative_idx}"
+                                            )
+
+                                            if (
+                                                image_key
+                                                in st.session_state.crop_regions
+                                            ):
+                                                crops = st.session_state.crop_regions[
+                                                    image_key
+                                                ]
+
                                                 for j, crop_info in enumerate(crops):
-                                                    if crop_info.get('cropped_image'):
-                                                        # Save the cropped image
-                                                        cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}.png"
-                                                        cropped_path = os.path.join(recipe_dir, "images", cropped_filename)
-                                                        
+                                                    if crop_info.get("cropped_image"):
+                                                        # Save the cropped image with _main or _step suffix
+                                                        suffix = (
+                                                            "_main"
+                                                            if crop_info.get(
+                                                                "is_main", False
+                                                            )
+                                                            else "_step"
+                                                        )
+                                                        cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}{suffix}.png"
+                                                        cropped_path = os.path.join(
+                                                            recipe_dir,
+                                                            "images",
+                                                            cropped_filename,
+                                                        )
+
                                                         # Ensure images directory exists
-                                                        os.makedirs(os.path.dirname(cropped_path), exist_ok=True)
-                                                        
+                                                        os.makedirs(
+                                                            os.path.dirname(
+                                                                cropped_path
+                                                            ),
+                                                            exist_ok=True,
+                                                        )
+
                                                         # Save the pre-cropped image
-                                                        crop_info['cropped_image'].save(cropped_path)
-                                                        
-                                                        extracted_images.append({
-                                                            "filename": cropped_filename,
-                                                            "description": crop_info.get('description', ''),
-                                                            "is_main": crop_info.get('is_main', len(extracted_images) == 0),
-                                                            "is_step": not crop_info.get('is_main', len(extracted_images) == 0),
-                                                        })
-                                        
-                                        image_metadata = {"extracted_images": extracted_images}
+                                                        crop_info["cropped_image"].save(
+                                                            cropped_path
+                                                        )
+
+                                                        extracted_images.append(
+                                                            {
+                                                                "filename": cropped_filename,
+                                                                "description": crop_info.get(
+                                                                    "description", ""
+                                                                ),
+                                                                "is_main": crop_info.get(
+                                                                    "is_main",
+                                                                    len(
+                                                                        extracted_images
+                                                                    )
+                                                                    == 0,
+                                                                ),
+                                                                "is_step": not crop_info.get(
+                                                                    "is_main",
+                                                                    len(
+                                                                        extracted_images
+                                                                    )
+                                                                    == 0,
+                                                                ),
+                                                            }
+                                                        )
+
+                                        image_metadata = {
+                                            "extracted_images": extracted_images
+                                        }
                                     else:
                                         # Automatic image extraction
                                         recipe_image_extractor = RecipeImageExtractor(
                                             llm_client
                                         )
-                                        image_metadata = (
-                                            recipe_image_extractor.extract_recipe_images(
-                                                temp_paths, recipe.name, recipe_dir
-                                            )
+                                        image_metadata = recipe_image_extractor.extract_recipe_images(
+                                            temp_paths, recipe.name, recipe_dir
                                         )
 
                                     # Update recipe with image references
@@ -1269,32 +1412,68 @@ class StreamlitRecipeApp:
                                 if manual_crop:
                                     # Use pre-cropped images from the manual cropping step
                                     extracted_images = []
-                                    
+
+                                    # Save original image to /images/originals
+                                    originals_dir = os.path.join(
+                                        recipe_dir, "images", "originals"
+                                    )
+                                    os.makedirs(originals_dir, exist_ok=True)
+                                    original_path = os.path.join(
+                                        originals_dir, uploaded_file.name
+                                    )
+                                    Image.open(tmp_file_path).save(original_path)
+
                                     image_key = f"multi_img_{i}"
-                                    
+
                                     if image_key in st.session_state.crop_regions:
                                         crops = st.session_state.crop_regions[image_key]
-                                        
+
                                         for j, crop_info in enumerate(crops):
-                                            if crop_info.get('cropped_image'):
-                                                # Save the cropped image
-                                                cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}.png"
-                                                cropped_path = os.path.join(recipe_dir, "images", cropped_filename)
-                                                
+                                            if crop_info.get("cropped_image"):
+                                                # Save the cropped image with _main or _step suffix
+                                                suffix = (
+                                                    "_main"
+                                                    if crop_info.get("is_main", False)
+                                                    else "_step"
+                                                )
+                                                cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}{suffix}.png"
+                                                cropped_path = os.path.join(
+                                                    recipe_dir,
+                                                    "images",
+                                                    cropped_filename,
+                                                )
+
                                                 # Ensure images directory exists
-                                                os.makedirs(os.path.dirname(cropped_path), exist_ok=True)
-                                                
+                                                os.makedirs(
+                                                    os.path.dirname(cropped_path),
+                                                    exist_ok=True,
+                                                )
+
                                                 # Save the pre-cropped image
-                                                crop_info['cropped_image'].save(cropped_path)
-                                                
-                                                extracted_images.append({
-                                                    "filename": cropped_filename,
-                                                    "description": crop_info.get('description', ''),
-                                                    "is_main": crop_info.get('is_main', len(extracted_images) == 0),
-                                                    "is_step": not crop_info.get('is_main', len(extracted_images) == 0),
-                                                })
-                                    
-                                    image_metadata = {"extracted_images": extracted_images}
+                                                crop_info["cropped_image"].save(
+                                                    cropped_path
+                                                )
+
+                                                extracted_images.append(
+                                                    {
+                                                        "filename": cropped_filename,
+                                                        "description": crop_info.get(
+                                                            "description", ""
+                                                        ),
+                                                        "is_main": crop_info.get(
+                                                            "is_main",
+                                                            len(extracted_images) == 0,
+                                                        ),
+                                                        "is_step": not crop_info.get(
+                                                            "is_main",
+                                                            len(extracted_images) == 0,
+                                                        ),
+                                                    }
+                                                )
+
+                                    image_metadata = {
+                                        "extracted_images": extracted_images
+                                    }
                                 else:
                                     # Automatic image extraction
                                     recipe_image_extractor = RecipeImageExtractor(
@@ -1392,7 +1571,7 @@ class StreamlitRecipeApp:
             help="Enter the full URL of the webpage containing the recipe",
         )
 
-        col1, col2, col3 = st.columns([1, 1, 2])
+        col1, col2 = st.columns([1, 2])
         with col1:
             extract_button = st.button(
                 "🚀 Extract Recipe",
@@ -1400,13 +1579,9 @@ class StreamlitRecipeApp:
                 disabled=not url_input,
                 key="web_extract_button",
             )
-        with col2:
-            manual_crop = st.checkbox(
-                "✂️ Manual Crop",
-                value=True,
-                help="Manually select recipe images from the web page",
-                key="web_manual_crop",
-            )
+
+        # Manual cropping is always enabled
+        manual_crop = True
 
         if extract_button and url_input:
             with st.spinner("🌐 Fetching and extracting recipe from web page..."):
@@ -1547,18 +1722,14 @@ class StreamlitRecipeApp:
                         st.error(f"❌ Invalid page format: {str(e)}")
                         page_numbers = None
 
-            col1, col2, col3 = st.columns([1, 1, 2])
+            col1, col2 = st.columns([1, 2])
             with col1:
                 extract_button = st.button(
                     "🚀 Extract Recipe", type="primary", key="pdf_extract_button"
                 )
-            with col2:
-                manual_crop = st.checkbox(
-                    "✂️ Manual Crop",
-                    value=True,
-                    help="Manually select recipe images from PDF pages",
-                    key="pdf_manual_crop",
-                )
+
+            # Manual cropping is always enabled
+            manual_crop = True
 
             if extract_button:
                 with st.spinner(
