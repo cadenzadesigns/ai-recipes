@@ -18,6 +18,56 @@ class LLMClient:
         self.client = OpenAI(api_key=self.api_key)
         self.model = model or OPENAI_MODEL
 
+    def _clean_ingredient_name(self, name: str) -> str:
+        """Remove bullet points and clean up ingredient names."""
+        if not name:
+            return name
+
+        # Common bullet point patterns to remove
+        bullet_patterns = [
+            "• ",
+            "· ",
+            "- ",
+            "* ",
+            "• ",
+            "· ",
+            "− ",
+            "∙ ",
+            "◦ ",
+            "▪ ",
+            "▫ ",
+        ]
+
+        cleaned = name
+        for pattern in bullet_patterns:
+            if cleaned.startswith(pattern):
+                cleaned = cleaned[len(pattern) :]
+
+        # Also strip any leading/trailing whitespace
+        return cleaned.strip()
+
+    def _clean_recipe_ingredients(self, recipe: Recipe) -> Recipe:
+        """Clean all ingredient names in a recipe to remove bullet points."""
+        # Clean ingredients in the main ingredients list
+        if recipe.ingredients:
+            for ingredient in recipe.ingredients:
+                if ingredient.item and ingredient.item.name:
+                    ingredient.item.name = self._clean_ingredient_name(
+                        ingredient.item.name
+                    )
+
+        # Clean ingredients in components
+        if recipe.components:
+            for component in recipe.components:
+                if component.ingredients:
+                    for ingredient in component.ingredients:
+                        if ingredient.item and ingredient.item.name:
+                            ingredient.item.name = self._clean_ingredient_name(
+                                ingredient.item.name
+                            )
+
+        return recipe
+
     def extract_recipe(
         self, content: Union[str, List[Dict[str, Any]]], source: str = None
     ) -> Recipe:
@@ -119,6 +169,9 @@ Be thorough and accurate. If information is missing, use null for optional field
                 else:
                     raise ValueError("LLM returned empty response")
 
+            # Clean any bullet points from ingredient names
+            recipe = self._clean_recipe_ingredients(recipe)
+
             # Add source if provided and not already set
             if source and not recipe.source:
                 recipe.source = source
@@ -143,6 +196,7 @@ Be thorough and accurate. If information is missing, use null for optional field
         for content, source in zip(contents, sources):
             try:
                 recipe = self.extract_recipe(content, source)
+                # Note: recipe is already cleaned in extract_recipe
                 recipes.append(recipe)
             except Exception as e:
                 print(f"Failed to extract recipe: {str(e)}")
