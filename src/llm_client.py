@@ -27,20 +27,57 @@ class LLMClient:
 
 Extract the following information:
 - Name: The recipe title
+- Alternate_name: If there's a subtitle or alternate name provided in parentheses or as a secondary title, capture it here
 - Description: The EXACT description text as it appears in the source, typically found after the title and before ingredients. Copy this verbatim - do not paraphrase or summarize.
 - Servings: Number of servings or yield (e.g., "4 servings", "12 cookies", "1 9-inch pie")
 - Total_time: Total time ONLY if explicitly stated in the recipe (e.g., "45 minutes", "1 hour 30 minutes"). Do NOT calculate or infer this - only include if the source explicitly states total time. Leave as null if not provided.
-- Ingredients: Extract each ingredient as a structured object with:
+
+For Ingredients - Check if the recipe has multiple components:
+- If the recipe has distinct sections with titles like "For the Dough", "For the Filling", "Frosting", etc.:
+  Use 'components' field (leave 'ingredients' as null):
+  - Each component should have:
+    - title: The component title (e.g., "For the Dough", "Filling", "Glaze")
+    - ingredients: List of ingredients for that component
+- If the recipe has a single unified ingredient list:
+  Use 'ingredients' field (leave 'components' as null)
+
+For each ingredient (whether in components or main ingredients), extract as a structured object with:
   - amount: Object containing:
     - quantity: The numeric amount (like "1", "2.5", "1/2", "1-2")
     - unit: The measurement unit (like "cup", "tablespoon", "pound", "ounce")
+    - metric_quantity: If a metric measurement is also provided (like "200" for 200g)
+    - metric_unit: The metric unit if provided (like "g", "ml", "kg", "L")
   - item: Object containing:
-    - name: The core ingredient name ONLY (like "salt", "cumin", "flour", "butter", "jalapeños")
-    - modifiers: List of descriptors/specifications (like ["kosher"], ["ground"], ["all-purpose"], ["unsalted", "softened"])
+    - name: The core ingredient name ONLY (like "salt", "pepper", "flour", "butter", "chicken thighs", "green onions")
+    - modifiers: List of descriptors/specifications that come AFTER the ingredient name
     - alternative: If there's a substitution mentioned (like "or serrano peppers"), create another item object for the alternative
-  IMPORTANT:
-  - Separate the base ingredient name from its modifiers (e.g., "kosher salt" → name: "salt", modifiers: ["kosher"])
+
+CRITICAL - Follow this EXACT parsing order: AMOUNT → ITEM NAME → DESCRIPTORS/MODIFIERS
+Examples of correct parsing:
+  * "1 pound brined, cut into nuggets chicken thighs" → quantity="1", unit="pound", name="chicken thighs", modifiers=["brined", "cut into nuggets"]
+  * "1/2 teaspoon ground, white pepper" → quantity="1/2", unit="teaspoon", name="pepper", modifiers=["white", "ground"]
+  * "474 g heavy cream" → metric_quantity="474", metric_unit="g", name="heavy cream"
+  * "150 g butter, unsalted, cold, cubed" → metric_quantity="150", metric_unit="g", name="butter", modifiers=["unsalted", "cold", "cubed"]
+  * "2 green onions, cut on an angle into 2-inch slices" → quantity="2", name="green onions", modifiers=["cut on an angle into 2-inch slices"]
+  * "604 g ricotta, sheep's milk" → metric_quantity="604", metric_unit="g", name="ricotta", modifiers=["sheep's milk"]
+  * "2 cloves garlic, thinly sliced" → quantity="2", unit="cloves", name="garlic", modifiers=["thinly sliced"]
+
+IMPORTANT:
+  - The ingredient NAME comes IMMEDIATELY after the amount, BEFORE any descriptors
+  - ALL descriptive text (preparation, quality, type, etc.) goes in modifiers
   - Use standard fractions like 1/2, 1/3, 1/4 instead of Unicode fraction characters (½, ⅓, ¼)
+  - For dual measurements, capture BOTH regardless of order. Common formats include:
+    * "220g / 1 cup white wine" → metric_quantity="220", metric_unit="g", quantity="1", unit="cup", name="white wine"
+    * "1 cup / 220g white wine" → quantity="1", unit="cup", metric_quantity="220", metric_unit="g", name="white wine"
+    * "1 cup (240ml) milk" → quantity="1", unit="cup", metric_quantity="240", metric_unit="ml", name="milk"
+    * "200g (1 cup) flour" → metric_quantity="200", metric_unit="g", quantity="1", unit="cup", name="flour"
+    * "8 ounces (225g) butter" → quantity="8", unit="ounces", metric_quantity="225", metric_unit="g", name="butter"
+  - Identify metric vs standard units correctly:
+    * Metric units: g, kg, ml, L, cl, dl (grams, kilograms, milliliters, liters, centiliters, deciliters)
+    * Standard/Imperial units: cup, tablespoon, teaspoon, ounce, pound, quart, pint, gallon, stick, etc.
+  - Convert any diacritical marks to their ASCII equivalents (e.g., "jalapeños" → "jalapenos", "crème" → "creme")
+  - Use EITHER 'components' OR 'ingredients', never both
+
 - Directions: Step-by-step cooking instructions, each step on a new line
 - Notes: Any additional tips, variations, storage instructions, or important information (as an array, one note per item)
 - Source: The source of the recipe (if not provided, leave empty)

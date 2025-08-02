@@ -846,27 +846,32 @@ class StreamlitRecipeApp:
                             with cols[i % len(cols)]:
                                 # Create a unique button key for each image
                                 button_key = f"jump_to_img_{current_group}_{i}"
-                                
+
                                 # Make the button clickable
                                 if st.button(
                                     f"📷 Image {i + 1}",
                                     key=button_key,
                                     use_container_width=True,
-                                    type="primary" if i == st.session_state.get("current_image_crop", 0) else "secondary"
+                                    type=(
+                                        "primary"
+                                        if i
+                                        == st.session_state.get("current_image_crop", 0)
+                                        else "secondary"
+                                    ),
                                 ):
                                     st.session_state.current_image_crop = i
                                     st.rerun()
-                                
+
                                 # Show the thumbnail with border styling
                                 uploaded_files[img_idx].seek(0)
                                 img = Image.open(uploaded_files[img_idx])
-                                
+
                                 # Convert image to base64 for inline display with border
                                 buffered = BytesIO()
                                 img.thumbnail((300, 300), Image.Resampling.LANCZOS)
                                 img.save(buffered, format="PNG")
                                 img_str = base64.b64encode(buffered.getvalue()).decode()
-                                
+
                                 # Display image with appropriate border
                                 if i == st.session_state.get("current_image_crop", 0):
                                     # Highlight current image with blue border
@@ -889,7 +894,7 @@ class StreamlitRecipeApp:
                                             </p>
                                         </div>
                                         """,
-                                        unsafe_allow_html=True
+                                        unsafe_allow_html=True,
                                     )
                                 else:
                                     # Regular image with gray border
@@ -912,7 +917,7 @@ class StreamlitRecipeApp:
                                             </p>
                                         </div>
                                         """,
-                                        unsafe_allow_html=True
+                                        unsafe_allow_html=True,
                                     )
 
                         # Initialize current image cropping
@@ -932,7 +937,7 @@ class StreamlitRecipeApp:
                                     nav_indicators.append("🔵")
                                 else:
                                     nav_indicators.append("⚪")
-                            
+
                             st.write(
                                 f"#### Cropping Image {current_img_idx_in_group + 1} of {len(group_indices)}: {uploaded_file.name}"
                             )
@@ -1067,7 +1072,11 @@ class StreamlitRecipeApp:
 
                         with col3:
                             # Finish cropping button - always visible
-                            if st.button("✅ Finish Cropping", type="primary", help="Complete cropping and proceed to extraction"):
+                            if st.button(
+                                "✅ Finish Cropping",
+                                type="primary",
+                                help="Complete cropping and proceed to extraction",
+                            ):
                                 st.session_state.crop_step_completed = True
                                 st.session_state.crop_step_active = False
                                 st.success(
@@ -1113,7 +1122,11 @@ class StreamlitRecipeApp:
 
                         with col3:
                             # Finish cropping button - always visible
-                            if st.button("✅ Finish Cropping", type="primary", help="Complete cropping and proceed to extraction"):
+                            if st.button(
+                                "✅ Finish Cropping",
+                                type="primary",
+                                help="Complete cropping and proceed to extraction",
+                            ):
                                 st.session_state.crop_step_completed = True
                                 st.session_state.crop_step_active = False
                                 st.success(
@@ -2131,9 +2144,11 @@ class StreamlitRecipeApp:
 
         if recipe.description:
             st.markdown(f"**Description:** {recipe.description}")
-        
+
         # Display main recipe image if available
-        recipe_dir = getattr(recipe, '_recipe_dir', None) or st.session_state.get("recipe_dir")
+        recipe_dir = getattr(recipe, "_recipe_dir", None) or st.session_state.get(
+            "recipe_dir"
+        )
         if recipe_dir and recipe.images:
             main_images = [img for img in recipe.images if img.is_main]
             if main_images:
@@ -2184,7 +2199,7 @@ class StreamlitRecipeApp:
             st.markdown("#### 📝 Notes")
             for note in recipe.notes:
                 st.markdown(f"• {note}")
-        
+
         # Step-by-step images if available
         if recipe_dir and recipe.images:
             step_images = [img for img in recipe.images if img.is_step]

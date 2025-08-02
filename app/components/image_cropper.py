@@ -239,17 +239,17 @@ class StreamlitImageCropper:
 
             # Navigation buttons
             st.write("#### Navigation")
-            
+
             # Show "Add Another Image" button prominently
             if st.button(
                 "➕ Add Another Image",
                 key=f"{image_key}_add_another",
                 type="primary",
-                help="Draw another crop region on this page"
+                help="Draw another crop region on this page",
             ):
                 # Just rerun to clear the current crop box
                 st.rerun()
-            
+
             # Create a callback to set the done flag
             def mark_page_done():
                 st.session_state[f"{image_key}_page_complete"] = True
@@ -259,7 +259,7 @@ class StreamlitImageCropper:
                 key=f"{image_key}_done",
                 type="secondary",
                 on_click=mark_page_done,
-                help="Move to the next page"
+                help="Move to the next page",
             ):
                 st.success(
                     f"✅ Finished cropping {len(st.session_state.crop_regions[image_key])} images from this page!"
