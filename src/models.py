@@ -290,7 +290,7 @@ class Recipe(BaseModel):
         # Ingredients
         lines.append("INGREDIENTS:")
         for ingredient in self.ingredients:
-            lines.append(f"  • {ingredient.to_string()}")
+            lines.append(f"  {ingredient.to_string()}")
         lines.append("")
 
         # Directions
@@ -303,7 +303,7 @@ class Recipe(BaseModel):
         if self.notes:
             lines.append("NOTES:")
             for note in self.notes:
-                lines.append(f"  • {note}")
+                lines.append(f"  {note}")
             lines.append("")
 
         # Source
@@ -320,7 +320,7 @@ class Recipe(BaseModel):
                     prefix = "[Main] "
                 elif image.is_step:
                     prefix = "[Step] "
-                lines.append(f"  • {prefix}{image.filename}")
+                lines.append(f"  {prefix}{image.filename}")
                 if image.description:
                     lines.append(f"    {image.description}")
             lines.append("")
