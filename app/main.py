@@ -2633,6 +2633,22 @@ class StreamlitRecipeApp:
         if not st.session_state.api_key_valid:
             return
 
+        # Check if there's a recipe in the URL query params (direct link)
+        recipe_from_url = st.query_params.get("recipe")
+        if recipe_from_url:
+            # Show the recipe viewer directly
+            from app.pages.recipe_viewer import show_recipe_viewer
+
+            st.session_state.selected_recipe_name = recipe_from_url
+            show_recipe_viewer()
+            # Add button to go to main extractor
+            if st.button("← Back to Extractor", key="back_to_extractor_from_recipe"):
+                st.query_params.clear()
+                if "selected_recipe_name" in st.session_state:
+                    del st.session_state.selected_recipe_name
+                st.rerun()
+            return
+
         # Check if we should show recipe collection
         if st.session_state.get("show_recipe_collection", False):
             from app.pages.recipe_collection import show_recipe_collection
