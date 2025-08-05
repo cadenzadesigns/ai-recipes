@@ -16,7 +16,7 @@ def show_recipe_collection():
     # Check if we should show recipe viewer instead
     if st.session_state.get("show_recipe_viewer", False):
         from app.pages.recipe_viewer import show_recipe_viewer
-        
+
         show_recipe_viewer()
         # Add back button
         if st.button("← Back to Recipe Collection", key="back_from_viewer"):

@@ -2636,6 +2636,7 @@ class StreamlitRecipeApp:
         # Check if we should show recipe collection
         if st.session_state.get("show_recipe_collection", False):
             from app.pages.recipe_collection import show_recipe_collection
+
             show_recipe_collection()
             # Add back button
             if st.button("← Back to Extractor", key="back_to_extractor"):
