@@ -184,7 +184,7 @@ def show_recipe_viewer():
                                 item_str += f", {', '.join(ingredient['item']['modifiers'])}"
                             ing_parts.append(item_str)
                         
-                        st.markdown(f"• {' '.join(ing_parts)}")
+                        st.markdown(f"{' '.join(ing_parts)}")
                     st.markdown("")
             elif recipe_data.get("ingredients"):
                 # Simple ingredient list
@@ -239,6 +239,27 @@ def show_recipe_viewer():
             f'<div class="author-credit">Recipe from {recipe_data["source"]}</div>',
             unsafe_allow_html=True
         )
+    
+    # Additional original images
+    originals_dir = recipe_dir / "images" / "originals"
+    if originals_dir.exists():
+        # Get all JPG files from originals folder
+        jpg_files = list(originals_dir.glob("*.jpg")) + list(originals_dir.glob("*.JPG")) + list(originals_dir.glob("*.jpeg")) + list(originals_dir.glob("*.JPEG"))
+        
+        if jpg_files:
+            st.markdown("---")
+            st.markdown("### 📸 Additional Photos")
+            st.caption("Original photos from the recipe source")
+            
+            # Display in a grid
+            cols = st.columns(3)
+            for i, jpg_path in enumerate(jpg_files):
+                with cols[i % 3]:
+                    st.image(str(jpg_path), use_container_width=True)
+                    # Add hidden HTML img for Paprika
+                    with open(jpg_path, "rb") as image_file:
+                        encoded_string = base64.b64encode(image_file.read()).decode()
+                    st.markdown(f'<img src="data:image/jpeg;base64,{encoded_string}" width="1" height="1" style="position: absolute; left: -9999px;" alt="Additional photo" />', unsafe_allow_html=True)
 
 
 # Run the page
