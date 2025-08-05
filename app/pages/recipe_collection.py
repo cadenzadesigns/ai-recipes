@@ -19,7 +19,7 @@ def show_recipe_collection():
         
         show_recipe_viewer()
         # Add back button
-        if st.button("← Back to Recipe Collection"):
+        if st.button("← Back to Recipe Collection", key="back_from_viewer"):
             st.session_state.show_recipe_viewer = False
             if "selected_recipe_name" in st.session_state:
                 del st.session_state.selected_recipe_name

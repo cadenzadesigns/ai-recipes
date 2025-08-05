@@ -20,7 +20,7 @@ def show_recipe_viewer():
 
     if not recipe_name:
         st.error("No recipe specified.")
-        if st.button("← Back to Recipe Collection"):
+        if st.button("← Back to Recipe Collection", key="back_no_recipe"):
             # Just return - will go back to recipe collection
             return
         return
@@ -33,7 +33,7 @@ def show_recipe_viewer():
 
     if not json_files:
         st.error(f"Recipe data not found for '{recipe_name}'.")
-        if st.button("← Back to Recipe Collection"):
+        if st.button("← Back to Recipe Collection", key="back_no_data"):
             # Just return - will go back to recipe collection
             return
         return
@@ -84,7 +84,7 @@ def show_recipe_viewer():
     )
 
     # Back button
-    if st.button("← Back to Recipe Collection"):
+    if st.button("← Back to Recipe Collection", key="back_main"):
         # Just return - will go back to recipe collection
         return
 
