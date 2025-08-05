@@ -1,8 +1,6 @@
 """Recipe Collection page for browsing all extracted recipes."""
 
-import os
 import sys
-import webbrowser
 from pathlib import Path
 
 import streamlit as st
