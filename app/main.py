@@ -25,6 +25,10 @@ except ImportError:
 sys.path.append(str(Path(__file__).parent.parent))
 
 from app.components.image_cropper import StreamlitImageCropper
+from app.recipe_html_generator import RecipeHTMLGenerator
+
+# Import recipe utilities
+from app.recipe_utils import ensure_recipe_htmls_exist
 from src.extractors.image import ImageExtractor
 from src.extractors.pdf import PDFExtractor
 from src.extractors.pdf_image_extractor import PDFImageExtractor
@@ -75,6 +79,7 @@ class StreamlitRecipeApp:
         self.setup_page_config()
         self.initialize_session_state()
         self.setup_api_key()
+        self.html_generator = RecipeHTMLGenerator()
 
     def setup_page_config(self):
         """Configure Streamlit page settings."""
@@ -95,6 +100,12 @@ class StreamlitRecipeApp:
             st.session_state.current_recipe = None
         if "crop_regions" not in st.session_state:
             st.session_state.crop_regions = {}
+
+    def save_recipe_with_html(self, recipe: Recipe, formatter: RecipeFormatter) -> str:
+        """Save recipe and generate HTML page."""
+        recipe_dir = formatter.save_recipe(recipe)
+        self.html_generator.save_recipe_html(recipe, Path(recipe_dir))
+        return recipe_dir
 
     def setup_api_key(self):
         """Handle OpenAI API key configuration."""
@@ -200,7 +211,7 @@ class StreamlitRecipeApp:
 
                             # Save recipe to /recipes directory
                             formatter = RecipeFormatter()
-                            recipe_dir = formatter.save_recipe(recipe)
+                            recipe_dir = self.save_recipe_with_html(recipe, formatter)
 
                             # Extract recipe images
                             if manual_crop:
@@ -1189,7 +1200,7 @@ class StreamlitRecipeApp:
                             # Save combined recipe to /recipes directory (70-75%)
                             status_text.text("Saving recipe...")
                             formatter = RecipeFormatter()
-                            recipe_dir = formatter.save_recipe(recipe)
+                            recipe_dir = self.save_recipe_with_html(recipe, formatter)
                             progress_bar.progress(0.75)
 
                             # Extract recipe images if multiple pages (75-95%)
@@ -1424,7 +1435,9 @@ class StreamlitRecipeApp:
 
                                 # Save recipe
                                 formatter = RecipeFormatter()
-                                recipe_dir = formatter.save_recipe(recipe)
+                                recipe_dir = self.save_recipe_with_html(
+                                    recipe, formatter
+                                )
 
                                 # Extract images
                                 if len(temp_paths) > 1:
@@ -1628,7 +1641,9 @@ class StreamlitRecipeApp:
 
                                 # Save individual recipe to /recipes directory
                                 formatter = RecipeFormatter()
-                                recipe_dir = formatter.save_recipe(recipe)
+                                recipe_dir = self.save_recipe_with_html(
+                                    recipe, formatter
+                                )
 
                                 # Extract recipe images
                                 if manual_crop:
@@ -1850,7 +1865,7 @@ class StreamlitRecipeApp:
 
                     # Save recipe to /recipes directory
                     formatter = RecipeFormatter()
-                    recipe_dir = formatter.save_recipe(recipe)
+                    recipe_dir = self.save_recipe_with_html(recipe, formatter)
 
                     st.success(f"✅ Recipe extracted and saved to: {recipe_dir}")
                     st.session_state.recipe_dir = recipe_dir
@@ -2016,7 +2031,7 @@ class StreamlitRecipeApp:
 
                             # Save recipe to /recipes directory
                             formatter = RecipeFormatter()
-                            recipe_dir = formatter.save_recipe(recipe)
+                            recipe_dir = self.save_recipe_with_html(recipe, formatter)
 
                             st.success(
                                 f"✅ Recipe extracted and saved to: {recipe_dir}"
@@ -2312,6 +2327,13 @@ class StreamlitRecipeApp:
         )
 
         st.sidebar.markdown("---")
+        st.sidebar.markdown("### 📚 Recipe Collection")
+        if st.sidebar.button(
+            "Browse Recipe Collection →", use_container_width=True, type="primary"
+        ):
+            st.switch_page("pages/recipe_collection.py")
+
+        st.sidebar.markdown("---")
         st.sidebar.markdown("### 🛠️ Tips")
         st.sidebar.markdown(
             """
@@ -2351,6 +2373,9 @@ class StreamlitRecipeApp:
 
 def main():
     """Main entry point for the Streamlit app."""
+    # Ensure all recipes have HTML files
+    ensure_recipe_htmls_exist()
+
     app = StreamlitRecipeApp()
     app.run()
 
