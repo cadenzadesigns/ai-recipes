@@ -10,9 +10,9 @@ enableXsrfProtection = true
 runOnSave = true
 
 [theme]
-# Theme colors for the app
+# Dark mode theme colors
 primaryColor = "#FF6B6B"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F0F2F6"
-textColor = "#262730"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#FAFAFA"
 font = "sans serif"
