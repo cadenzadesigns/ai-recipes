@@ -39,9 +39,10 @@ from src.formatter import RecipeFormatter
 from src.llm_client import LLMClient
 from src.models import Recipe, RecipeImage
 
-# Load environment variables from .env file in the project root
+# Load environment variables from .env file if it exists (local development)
 env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(env_path)
+if env_path.exists():
+    load_dotenv(env_path)
 
 
 @st.cache_data
