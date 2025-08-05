@@ -2,4 +2,17 @@
 showSidebarNavigation = false
 
 [server]
-enableStaticServing = true
+# Increase upload size limit for recipe images (in MB)
+maxUploadSize = 200
+# Enable XSRF protection for security
+enableXsrfProtection = true
+# Run on save for better development experience
+runOnSave = true
+
+[theme]
+# Theme colors for the app
+primaryColor = "#FF6B6B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
+font = "sans serif"

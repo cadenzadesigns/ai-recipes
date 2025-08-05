@@ -33,6 +33,7 @@ uv.lock
 
 # Environment variables
 .env
+.streamlit/secrets.toml
 
 # IDE
 CLAUDE.md
