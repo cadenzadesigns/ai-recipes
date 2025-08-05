@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import streamlit as st
 
-from app.main import main_page
+from app.main import main
 
 if __name__ == "__main__":
     # Set up Streamlit page config
@@ -19,4 +19,4 @@ if __name__ == "__main__":
     )
 
     # Run the main app
-    main_page()
+    main()
