@@ -15,16 +15,17 @@ def show_recipe_collection():
     """Display the recipe collection page."""
     # Check if we should show recipe viewer instead
     if st.session_state.get("show_recipe_viewer", False):
-        from app.pages.recipe_viewer import show_recipe_viewer
+        from app.pages.recipe_viewer import show_recipe_viewer_without_back
 
-        show_recipe_viewer()
-        # Add back button
+        # Add back button before showing viewer
         if st.button("← Back to Recipe Collection", key="back_from_viewer"):
             st.session_state.show_recipe_viewer = False
             if "selected_recipe_name" in st.session_state:
                 del st.session_state.selected_recipe_name
             st.query_params.clear()
             st.rerun()
+
+        show_recipe_viewer_without_back()
         return
 
     st.title("🍳 Recipe Collection")

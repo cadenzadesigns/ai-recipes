@@ -10,7 +10,7 @@ import streamlit as st
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 
-def show_recipe_viewer():
+def show_recipe_viewer(show_back_button=True):
     """Display recipe in a blog-style format."""
 
     # Get recipe name from query params or session state
@@ -83,10 +83,11 @@ def show_recipe_viewer():
         unsafe_allow_html=True,
     )
 
-    # Back button
-    if st.button("← Back to Recipe Collection", key="back_main"):
-        # Just return - will go back to recipe collection
-        return
+    # Back button (only show if requested)
+    if show_back_button:
+        if st.button("← Back to Recipe Collection", key="back_main"):
+            # Just return - will go back to recipe collection
+            return
 
     # Recipe header
     recipe_title = recipe_data["name"]
@@ -319,5 +320,12 @@ def show_recipe_viewer():
                     )
 
 
-# Run the page
-show_recipe_viewer()
+# Wrapper function without back button
+def show_recipe_viewer_without_back():
+    """Display recipe viewer without the back button."""
+    show_recipe_viewer(show_back_button=False)
+
+
+# Run the page (when accessed directly)
+if __name__ == "__main__":
+    show_recipe_viewer()
