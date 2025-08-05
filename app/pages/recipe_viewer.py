@@ -21,7 +21,8 @@ def show_recipe_viewer():
     if not recipe_name:
         st.error("No recipe specified.")
         if st.button("← Back to Recipe Collection"):
-            st.switch_page("pages/recipe_collection.py")
+            # Just return - will go back to recipe collection
+            return
         return
 
     # Load recipe data
@@ -33,7 +34,8 @@ def show_recipe_viewer():
     if not json_files:
         st.error(f"Recipe data not found for '{recipe_name}'.")
         if st.button("← Back to Recipe Collection"):
-            st.switch_page("pages/recipe_collection.py")
+            # Just return - will go back to recipe collection
+            return
         return
 
     with open(json_files[0]) as f:
@@ -83,7 +85,8 @@ def show_recipe_viewer():
 
     # Back button
     if st.button("← Back to Recipe Collection"):
-        st.switch_page("pages/recipe_collection.py")
+        # Just return - will go back to recipe collection
+        return
 
     # Recipe header
     recipe_title = recipe_data["name"]

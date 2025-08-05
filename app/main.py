@@ -2614,7 +2614,8 @@ class StreamlitRecipeApp:
         if st.sidebar.button(
             "Browse Recipe Collection →", use_container_width=True, type="primary"
         ):
-            st.switch_page("pages/recipe_collection.py")
+            st.session_state.show_recipe_collection = True
+            st.rerun()
 
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🛠️ Tips")
@@ -2630,6 +2631,16 @@ class StreamlitRecipeApp:
     def run(self):
         """Run the main Streamlit application."""
         if not st.session_state.api_key_valid:
+            return
+
+        # Check if we should show recipe collection
+        if st.session_state.get("show_recipe_collection", False):
+            from app.pages.recipe_collection import show_recipe_collection
+            show_recipe_collection()
+            # Add back button
+            if st.button("← Back to Extractor"):
+                st.session_state.show_recipe_collection = False
+                st.rerun()
             return
 
         self.show_header()
