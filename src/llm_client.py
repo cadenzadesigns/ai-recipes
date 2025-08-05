@@ -73,7 +73,12 @@ class LLMClient:
     ) -> Recipe:
         """Extract recipe from content using LLM."""
 
-        system_prompt = """You are a recipe extraction assistant. Your task is to extract recipe information from the provided content.
+        system_prompt = """You are a recipe extraction assistant. Your task is to extract recipe information from the provided content EXACTLY as it appears in the source.
+
+CRITICAL: DO NOT ADD ANY FORMATTING that wasn't in the original:
+- DO NOT add bullet points (•, -, *) to ingredients if they weren't there originally
+- DO NOT add "Step 1:", "Step 2:", etc. to directions if they weren't numbered in the original
+- PRESERVE the exact formatting and text as it appears in the source
 
 Extract the following information:
 - Name: The recipe title
@@ -98,7 +103,7 @@ For each ingredient (whether in components or main ingredients), extract as a st
     - metric_quantity: If a metric measurement is also provided (like "200" for 200g)
     - metric_unit: The metric unit if provided (like "g", "ml", "kg", "L")
   - item: Object containing:
-    - name: The core ingredient name ONLY (like "salt", "pepper", "flour", "butter", "chicken thighs", "green onions")
+    - name: The core ingredient name ONLY - DO NOT include any bullet points (•, -, *) even if they appear in the source
     - modifiers: List of descriptors/specifications that come AFTER the ingredient name
     - alternative: If there's a substitution mentioned (like "or serrano peppers"), create another item object for the alternative
 
@@ -128,11 +133,16 @@ IMPORTANT:
   - Convert any diacritical marks to their ASCII equivalents (e.g., "jalapeños" → "jalapenos", "crème" → "creme")
   - Use EITHER 'components' OR 'ingredients', never both
 
-- Directions: Step-by-step cooking instructions, each step on a new line
+- Directions: Extract the cooking instructions EXACTLY as they appear in the source:
+  * If the original has numbered steps (1., 2., etc.), keep those numbers
+  * If the original has no numbers, DO NOT add them
+  * Each instruction should be on a new line
+  * DO NOT add "Step 1:", "Step 2:" formatting unless it's in the original
+  * DO NOT reword or paraphrase - copy the exact text
 - Notes: Any additional tips, variations, storage instructions, or important information (as an array, one note per item)
 - Source: The source of the recipe (if not provided, leave empty)
 
-Be thorough and accurate. If information is missing, use null for optional fields."""
+Be thorough and accurate. Copy text EXACTLY as it appears. If information is missing, use null for optional fields."""
 
         messages = [{"role": "system", "content": system_prompt}]
 

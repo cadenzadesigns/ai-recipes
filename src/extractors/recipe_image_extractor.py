@@ -531,12 +531,30 @@ Please identify:
                 )
 
             try:
-                # Copy original image to originals directory
+                # Save original image to originals directory
                 original_filename = Path(image_path).name
-                original_dest = originals_dir / original_filename
 
-                # Copy the original image file directly (preserve format and metadata)
-                shutil.copy2(image_path, str(original_dest))
+                # Convert HEIC/HEIF to JPEG for better compatibility
+                if original_filename.lower().endswith((".heic", ".heif")):
+                    # Load and convert to JPEG
+                    img = Image.open(image_path)
+                    jpeg_filename = Path(original_filename).stem + ".jpg"
+                    original_dest = originals_dir / jpeg_filename
+
+                    # Convert to RGB if necessary
+                    if img.mode in ("RGBA", "LA", "P"):
+                        rgb_img = Image.new("RGB", img.size, (255, 255, 255))
+                        rgb_img.paste(
+                            img, mask=img.split()[-1] if img.mode == "RGBA" else None
+                        )
+                        img = rgb_img
+
+                    # Save as high-quality JPEG
+                    img.save(str(original_dest), "JPEG", quality=95, optimize=True)
+                else:
+                    # For non-HEIC files, copy as-is
+                    original_dest = originals_dir / original_filename
+                    shutil.copy2(image_path, str(original_dest))
 
                 # Analyze image with recipe name context
                 analysis = self.analyze_image_content(image_path, recipe_name)

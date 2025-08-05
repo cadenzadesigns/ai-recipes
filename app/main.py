@@ -330,30 +330,73 @@ class StreamlitRecipeApp:
         if uploaded_files:
             st.write(f"📁 {len(uploaded_files)} file(s) uploaded")
 
+            # Initialize deleted files tracking
+            if "deleted_files" not in st.session_state:
+                st.session_state.deleted_files = set()
+
+            # Filter out deleted files
+            active_files = [
+                (idx, file)
+                for idx, file in enumerate(uploaded_files)
+                if idx not in st.session_state.deleted_files
+            ]
+
             # Show preview of uploaded images
             with st.expander("👁️ Preview uploaded images", expanded=True):
-                # Sort files by name for consistent ordering
-                sorted_files = sorted(
-                    enumerate(uploaded_files), key=lambda x: x[1].name
-                )
-                cols = st.columns(min(len(sorted_files), 4))
-                for idx, (original_idx, file) in enumerate(sorted_files):
-                    with cols[idx % 4]:
-                        try:
-                            # Reset file pointer and read the image
-                            file.seek(0)
-                            img = Image.open(file)
-                            st.image(
-                                img,
-                                caption=f"{original_idx+1}. {file.name}",
-                                use_container_width=True,
-                            )
-                            file.seek(0)  # Reset for later use
-                        except Exception as e:
-                            st.error(f"Cannot preview {file.name}: {str(e)}")
+                if active_files:
+                    st.info(
+                        f"📸 {len(active_files)} active file(s) | 🗑️ {len(st.session_state.deleted_files)} deleted"
+                    )
 
-            if len(uploaded_files) > 4:
-                st.write(f"... and {len(uploaded_files) - 4} more files")
+                    # Sort files by name for consistent ordering
+                    sorted_files = sorted(active_files, key=lambda x: x[1].name)
+                    cols = st.columns(min(len(sorted_files), 4))
+                    for idx, (original_idx, file) in enumerate(sorted_files):
+                        with cols[idx % 4]:
+                            try:
+                                # Reset file pointer and read the image
+                                file.seek(0)
+                                img = Image.open(file)
+                                st.image(
+                                    img,
+                                    caption=f"{original_idx+1}. {file.name}",
+                                    use_container_width=True,
+                                )
+                                file.seek(0)  # Reset for later use
+
+                                # Delete button for each image
+                                if st.button(
+                                    "🗑️ Delete",
+                                    key=f"delete_{original_idx}",
+                                    help=f"Remove {file.name}",
+                                ):
+                                    st.session_state.deleted_files.add(original_idx)
+                                    # Reset saved assignments when files change
+                                    if "saved_assignments" in st.session_state:
+                                        del st.session_state.saved_assignments
+                                    if "groups_saved_once" in st.session_state:
+                                        del st.session_state.groups_saved_once
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Cannot preview {file.name}: {str(e)}")
+
+                    if len(active_files) > 4:
+                        st.write(f"... and {len(active_files) - 4} more files")
+
+                    # Option to restore deleted files
+                    if st.session_state.deleted_files:
+                        if st.button("♻️ Restore All Deleted Files", key="restore_all"):
+                            st.session_state.deleted_files.clear()
+                            # Reset saved assignments when files change
+                            if "saved_assignments" in st.session_state:
+                                del st.session_state.saved_assignments
+                            if "groups_saved_once" in st.session_state:
+                                del st.session_state.groups_saved_once
+                            st.rerun()
+                else:
+                    st.warning(
+                        "All files have been deleted. Please restore files or upload new ones."
+                    )
 
             # Always use grouped mode - the grouping interface handles all cases
             processing_mode = "grouped_recipes"
@@ -367,9 +410,11 @@ class StreamlitRecipeApp:
 
             # Initialize saved assignments if not exists
             if "saved_assignments" not in st.session_state:
-                # Initialize all images to Recipe 1
+                # Initialize all active images to Recipe 1
                 st.session_state.saved_assignments = {
-                    i: 1 for i in range(len(uploaded_files))
+                    i: 1
+                    for i in range(len(uploaded_files))
+                    if i not in st.session_state.deleted_files
                 }
                 st.session_state.num_groups = 1
 
@@ -454,9 +499,13 @@ class StreamlitRecipeApp:
             if "thumbnail_cache" not in st.session_state:
                 st.session_state.thumbnail_cache = {}
 
-            # Sort files by filename
+            # Sort files by filename, excluding deleted files
             sorted_indices = sorted(
-                range(len(uploaded_files)),
+                [
+                    i
+                    for i in range(len(uploaded_files))
+                    if i not in st.session_state.deleted_files
+                ],
                 key=lambda i: uploaded_files[i].name.lower(),
             )
 
@@ -667,13 +716,13 @@ class StreamlitRecipeApp:
                                         unsafe_allow_html=True,
                                     )
 
-            # Create recipe_groups list from saved assignments
+            # Create recipe_groups list from saved assignments, excluding deleted files
             st.session_state.recipe_groups = []
             for group_num in range(1, num_groups + 1):
                 group_indices = [
                     idx
                     for idx, g in st.session_state.saved_assignments.items()
-                    if g == group_num
+                    if g == group_num and idx not in st.session_state.deleted_files
                 ]
                 if group_indices:
                     st.session_state.recipe_groups.append(group_indices)
@@ -696,7 +745,7 @@ class StreamlitRecipeApp:
             # Determine the workflow based on cropping completion
             if not st.session_state.get("crop_step_completed", False):
                 # Step 1: Manual Cropping (if enabled and not completed)
-                col1, col2 = st.columns([1, 3])
+                col1, col2, col3 = st.columns([1, 1, 2])
                 with col1:
                     crop_button_text = "🖼️ Start Manual Cropping"
 
@@ -712,8 +761,25 @@ class StreamlitRecipeApp:
                         crop_button_text, type="primary", disabled=disabled
                     )
 
+                with col2:
+                    # Skip cropping button for pre-cropped photos
+                    skip_button = st.button(
+                        "⏭️ Skip Cropping",
+                        type="secondary",
+                        disabled=disabled,
+                        help="Skip cropping if your photos are already cropped",
+                    )
+
                 if crop_button:
                     st.session_state.crop_step_active = True
+                    st.rerun()
+
+                if skip_button:
+                    st.session_state.crop_step_completed = True
+                    st.session_state.crop_step_active = False
+                    st.info(
+                        "✅ Skipping manual cropping - using full images for extraction"
+                    )
                     st.rerun()
 
             else:
@@ -993,9 +1059,22 @@ class StreamlitRecipeApp:
                             col1, col2, col3 = st.columns([1, 1, 1])
 
                             with col1:
+                                # Previous image or previous recipe
                                 if current_img_idx_in_group > 0:
                                     if st.button("⬅️ Previous Image"):
                                         st.session_state.current_image_crop -= 1
+                                        st.rerun()
+                                elif current_group > 0:
+                                    # At first image of recipe, allow going back to previous recipe
+                                    if st.button("⬅️ Previous Recipe"):
+                                        st.session_state.current_group_crop -= 1
+                                        # Go to last image of previous recipe
+                                        prev_group_indices = valid_groups[
+                                            st.session_state.current_group_crop
+                                        ]
+                                        st.session_state.current_image_crop = (
+                                            len(prev_group_indices) - 1
+                                        )
                                         st.rerun()
 
                             with col2:
@@ -1156,12 +1235,18 @@ class StreamlitRecipeApp:
                     status_text.text("Combining all images into one recipe...")
 
                     try:
-                        # Save all uploaded files temporarily
+                        # Save all uploaded files temporarily (excluding deleted)
                         temp_paths = []
+                        active_indices = [
+                            i
+                            for i in range(len(uploaded_files))
+                            if i not in st.session_state.deleted_files
+                        ]
                         status_text.text("Preparing images...")
-                        for idx, uploaded_file in enumerate(uploaded_files):
+                        for counter, idx in enumerate(active_indices):
+                            uploaded_file = uploaded_files[idx]
                             progress_bar.progress(
-                                (idx / len(uploaded_files)) * 0.2
+                                (counter / len(active_indices)) * 0.2
                             )  # 0-20% for file prep
                             with tempfile.NamedTemporaryFile(
                                 delete=False, suffix=Path(uploaded_file.name).suffix
@@ -1219,7 +1304,21 @@ class StreamlitRecipeApp:
                                     progress_bar.progress(progress)
                                     status_text.text(message)
 
-                                if manual_crop:
+                                # Check if manual cropping was done or skipped
+                                has_crops = False
+                                if manual_crop and st.session_state.get(
+                                    "crop_step_completed", False
+                                ):
+                                    for i in range(len(temp_paths)):
+                                        image_key = f"single_img_{i}"
+                                        if (
+                                            image_key in st.session_state.crop_regions
+                                            and st.session_state.crop_regions[image_key]
+                                        ):
+                                            has_crops = True
+                                            break
+
+                                if has_crops:
                                     # Use pre-cropped images from the manual cropping step
                                     status_text.text("Using manually cropped images...")
                                     progress_bar.progress(0.8)
@@ -1231,10 +1330,15 @@ class StreamlitRecipeApp:
                                         recipe_dir, "images", "originals"
                                     )
                                     os.makedirs(originals_dir, exist_ok=True)
-
-                                    for i, (temp_path, uploaded_file) in enumerate(
-                                        zip(temp_paths, uploaded_files)
-                                    ):
+                                    # Only process originals if we're doing manual cropping with actual crops
+                                    active_indices = [
+                                        i
+                                        for i in range(len(uploaded_files))
+                                        if i not in st.session_state.deleted_files
+                                    ]
+                                    for counter, idx in enumerate(active_indices):
+                                        uploaded_file = uploaded_files[idx]
+                                        temp_path = temp_paths[counter]
                                         # Convert HEIC/HEIF to JPEG, keep others as-is
                                         original_name = uploaded_file.name
                                         if original_name.lower().endswith(
@@ -1336,7 +1440,26 @@ class StreamlitRecipeApp:
                                     image_metadata = {
                                         "extracted_images": extracted_images
                                     }
+                                elif (
+                                    st.session_state.get("crop_step_completed", False)
+                                    and not has_crops
+                                ):
+                                    # Cropping was skipped - use full images
+                                    status_text.text(
+                                        "Using full images (cropping skipped)..."
+                                    )
+                                    progress_bar.progress(0.8)
 
+                                    # Use automatic image extraction
+                                    recipe_image_extractor = RecipeImageExtractor(
+                                        llm_client
+                                    )
+                                    image_metadata = recipe_image_extractor.extract_recipe_images(
+                                        temp_paths,
+                                        recipe.name,
+                                        recipe_dir,
+                                        progress_callback=extraction_progress_callback,
+                                    )
                                 else:
                                     # Use automatic image extraction
                                     recipe_image_extractor = RecipeImageExtractor(
@@ -1441,7 +1564,30 @@ class StreamlitRecipeApp:
 
                                 # Extract images
                                 if len(temp_paths) > 1:
-                                    if manual_crop:
+                                    # Initialize has_crops to False
+                                    has_crops = False
+
+                                    if manual_crop and st.session_state.get(
+                                        "crop_step_completed", False
+                                    ):
+                                        # Check if cropping was actually done or skipped
+                                        for relative_idx, img_idx in enumerate(
+                                            image_indices
+                                        ):
+                                            image_key = (
+                                                f"group_{group_idx}_img_{relative_idx}"
+                                            )
+                                            if (
+                                                image_key
+                                                in st.session_state.crop_regions
+                                                and st.session_state.crop_regions[
+                                                    image_key
+                                                ]
+                                            ):
+                                                has_crops = True
+                                                break
+
+                                    if has_crops:
                                         # Use pre-cropped images from the manual cropping step
                                         extracted_images = []
 
@@ -1451,130 +1597,153 @@ class StreamlitRecipeApp:
                                         )
                                         os.makedirs(originals_dir, exist_ok=True)
 
-                                        # Save originals for this group
-                                        for relative_idx, img_idx in enumerate(
-                                            image_indices
-                                        ):
-                                            original_file = uploaded_files[img_idx]
-                                            temp_path = temp_paths[relative_idx]
-
-                                            # Convert HEIC/HEIF to JPEG, keep others as-is
-                                            original_name = original_file.name
-                                            if original_name.lower().endswith(
-                                                (".heic", ".heif")
+                                        if has_crops:
+                                            # Save originals for this group only if we have crops
+                                            for relative_idx, img_idx in enumerate(
+                                                image_indices
                                             ):
-                                                # Convert to JPEG with high quality
-                                                output_name = (
-                                                    os.path.splitext(original_name)[0]
-                                                    + ".jpg"
-                                                )
-                                                original_path = os.path.join(
-                                                    originals_dir, output_name
-                                                )
-                                                img = Image.open(temp_path)
-                                                # Convert to RGB if necessary (HEIC might have alpha channel)
-                                                if img.mode in ("RGBA", "LA", "P"):
-                                                    rgb_img = Image.new(
-                                                        "RGB", img.size, (255, 255, 255)
+                                                original_file = uploaded_files[img_idx]
+                                                temp_path = temp_paths[relative_idx]
+
+                                                # Convert HEIC/HEIF to JPEG, keep others as-is
+                                                original_name = original_file.name
+                                                if original_name.lower().endswith(
+                                                    (".heic", ".heif")
+                                                ):
+                                                    # Convert to JPEG with high quality
+                                                    output_name = (
+                                                        os.path.splitext(original_name)[
+                                                            0
+                                                        ]
+                                                        + ".jpg"
                                                     )
-                                                    rgb_img.paste(
-                                                        img,
-                                                        mask=(
-                                                            img.split()[-1]
-                                                            if img.mode == "RGBA"
-                                                            else None
-                                                        ),
+                                                    original_path = os.path.join(
+                                                        originals_dir, output_name
                                                     )
-                                                    img = rgb_img
-                                                img.save(
-                                                    original_path,
-                                                    "JPEG",
-                                                    quality=95,
-                                                    optimize=True,
-                                                )
-                                            else:
-                                                # Keep original format for non-HEIC files
-                                                original_path = os.path.join(
-                                                    originals_dir, original_name
-                                                )
-                                                Image.open(temp_path).save(
-                                                    original_path
-                                                )
-
-                                        # Get the images for this group from the original image indices
-                                        for relative_idx, img_idx in enumerate(
-                                            image_indices
-                                        ):
-                                            image_key = (
-                                                f"group_{group_idx}_img_{relative_idx}"
-                                            )
-
-                                            if (
-                                                image_key
-                                                in st.session_state.crop_regions
-                                            ):
-                                                crops = st.session_state.crop_regions[
-                                                    image_key
-                                                ]
-
-                                                for j, crop_info in enumerate(crops):
-                                                    if crop_info.get("cropped_image"):
-                                                        # Save the cropped image with _main or _step suffix
-                                                        suffix = (
-                                                            "_main"
-                                                            if crop_info.get(
-                                                                "is_main", False
-                                                            )
-                                                            else "_step"
+                                                    img = Image.open(temp_path)
+                                                    # Convert to RGB if necessary (HEIC might have alpha channel)
+                                                    if img.mode in ("RGBA", "LA", "P"):
+                                                        rgb_img = Image.new(
+                                                            "RGB",
+                                                            img.size,
+                                                            (255, 255, 255),
                                                         )
-                                                        cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}{suffix}.png"
-                                                        cropped_path = os.path.join(
-                                                            recipe_dir,
-                                                            "images",
-                                                            cropped_filename,
-                                                        )
-
-                                                        # Ensure images directory exists
-                                                        os.makedirs(
-                                                            os.path.dirname(
-                                                                cropped_path
+                                                        rgb_img.paste(
+                                                            img,
+                                                            mask=(
+                                                                img.split()[-1]
+                                                                if img.mode == "RGBA"
+                                                                else None
                                                             ),
-                                                            exist_ok=True,
                                                         )
+                                                        img = rgb_img
+                                                    img.save(
+                                                        original_path,
+                                                        "JPEG",
+                                                        quality=95,
+                                                        optimize=True,
+                                                    )
+                                                else:
+                                                    # Keep original format for non-HEIC files
+                                                    original_path = os.path.join(
+                                                        originals_dir, original_name
+                                                    )
+                                                    Image.open(temp_path).save(
+                                                        original_path
+                                                    )
 
-                                                        # Save the pre-cropped image
-                                                        crop_info["cropped_image"].save(
-                                                            cropped_path
-                                                        )
+                                            # Get the images for this group from the original image indices
+                                            for relative_idx, img_idx in enumerate(
+                                                image_indices
+                                            ):
+                                                image_key = f"group_{group_idx}_img_{relative_idx}"
 
-                                                        extracted_images.append(
-                                                            {
-                                                                "filename": cropped_filename,
-                                                                "description": crop_info.get(
-                                                                    "description", ""
-                                                                ),
-                                                                "is_main": crop_info.get(
-                                                                    "is_main",
-                                                                    len(
-                                                                        extracted_images
-                                                                    )
-                                                                    == 0,
-                                                                ),
-                                                                "is_step": not crop_info.get(
-                                                                    "is_main",
-                                                                    len(
-                                                                        extracted_images
-                                                                    )
-                                                                    == 0,
-                                                                ),
-                                                            }
-                                                        )
+                                                if (
+                                                    image_key
+                                                    in st.session_state.crop_regions
+                                                ):
+                                                    crops = (
+                                                        st.session_state.crop_regions[
+                                                            image_key
+                                                        ]
+                                                    )
 
-                                        image_metadata = {
-                                            "extracted_images": extracted_images
-                                        }
+                                                    for j, crop_info in enumerate(
+                                                        crops
+                                                    ):
+                                                        if crop_info.get(
+                                                            "cropped_image"
+                                                        ):
+                                                            # Save the cropped image with _main or _step suffix
+                                                            suffix = (
+                                                                "_main"
+                                                                if crop_info.get(
+                                                                    "is_main", False
+                                                                )
+                                                                else "_step"
+                                                            )
+                                                            cropped_filename = f"{recipe.name}_image_{len(extracted_images)+1}{suffix}.png"
+                                                            cropped_path = os.path.join(
+                                                                recipe_dir,
+                                                                "images",
+                                                                cropped_filename,
+                                                            )
+
+                                                            # Ensure images directory exists
+                                                            os.makedirs(
+                                                                os.path.dirname(
+                                                                    cropped_path
+                                                                ),
+                                                                exist_ok=True,
+                                                            )
+
+                                                            # Save the pre-cropped image
+                                                            crop_info[
+                                                                "cropped_image"
+                                                            ].save(cropped_path)
+
+                                                            extracted_images.append(
+                                                                {
+                                                                    "filename": cropped_filename,
+                                                                    "description": crop_info.get(
+                                                                        "description",
+                                                                        "",
+                                                                    ),
+                                                                    "is_main": crop_info.get(
+                                                                        "is_main",
+                                                                        len(
+                                                                            extracted_images
+                                                                        )
+                                                                        == 0,
+                                                                    ),
+                                                                    "is_step": not crop_info.get(
+                                                                        "is_main",
+                                                                        len(
+                                                                            extracted_images
+                                                                        )
+                                                                        == 0,
+                                                                    ),
+                                                                }
+                                                            )
+
+                                            image_metadata = {
+                                                "extracted_images": extracted_images
+                                            }
+                                    elif (
+                                        st.session_state.get(
+                                            "crop_step_completed", False
+                                        )
+                                        and not has_crops
+                                    ):
+                                        # Cropping was skipped - use automatic extraction
+                                        recipe_image_extractor = RecipeImageExtractor(
+                                            llm_client
+                                        )
+                                        image_metadata = recipe_image_extractor.extract_recipe_images(
+                                            temp_paths, recipe.name, recipe_dir
+                                        )
                                     else:
-                                        # Automatic image extraction
+                                        # Default: Automatic image extraction
                                         recipe_image_extractor = RecipeImageExtractor(
                                             llm_client
                                         )
@@ -1592,6 +1761,98 @@ class StreamlitRecipeApp:
                                         )
                                         for img in image_metadata.get(
                                             "extracted_images", []
+                                        )
+                                    ]
+
+                                    # Update saved files
+                                    formatter.update_recipe_files(recipe, recipe_dir)
+                                else:
+                                    # Single image in group - save it as the main image
+                                    # For single images, we'll save the original as the main image
+                                    images_dir = os.path.join(recipe_dir, "images")
+                                    os.makedirs(images_dir, exist_ok=True)
+
+                                    # Also create originals directory
+                                    originals_dir = os.path.join(
+                                        images_dir, "originals"
+                                    )
+                                    os.makedirs(originals_dir, exist_ok=True)
+
+                                    # Save the single image and its original
+                                    img = Image.open(temp_paths[0])
+                                    original_file = group_files[0]
+
+                                    # Save original (with HEIC conversion if needed)
+                                    original_name = original_file.name
+                                    if original_name.lower().endswith(
+                                        (".heic", ".heif")
+                                    ):
+                                        # Convert to JPEG
+                                        output_name = (
+                                            os.path.splitext(original_name)[0] + ".jpg"
+                                        )
+                                        original_path = os.path.join(
+                                            originals_dir, output_name
+                                        )
+
+                                        # Convert to RGB if necessary
+                                        if img.mode in ("RGBA", "LA", "P"):
+                                            rgb_img = Image.new(
+                                                "RGB", img.size, (255, 255, 255)
+                                            )
+                                            rgb_img.paste(
+                                                img,
+                                                mask=(
+                                                    img.split()[-1]
+                                                    if img.mode == "RGBA"
+                                                    else None
+                                                ),
+                                            )
+                                            img = rgb_img
+
+                                        img.save(
+                                            original_path,
+                                            "JPEG",
+                                            quality=95,
+                                            optimize=True,
+                                        )
+                                    else:
+                                        # Keep original format
+                                        original_path = os.path.join(
+                                            originals_dir, original_name
+                                        )
+                                        img.save(original_path)
+
+                                    # Save as main image
+                                    main_filename = f"{recipe.name}_main.jpg"
+                                    main_path = os.path.join(images_dir, main_filename)
+
+                                    # Convert to RGB if necessary
+                                    if img.mode in ("RGBA", "LA", "P"):
+                                        rgb_img = Image.new(
+                                            "RGB", img.size, (255, 255, 255)
+                                        )
+                                        rgb_img.paste(
+                                            img,
+                                            mask=(
+                                                img.split()[-1]
+                                                if img.mode == "RGBA"
+                                                else None
+                                            ),
+                                        )
+                                        img = rgb_img
+
+                                    img.save(
+                                        main_path, "JPEG", quality=95, optimize=True
+                                    )
+
+                                    # Update recipe with the image
+                                    recipe.images = [
+                                        RecipeImage(
+                                            filename=main_filename,
+                                            description="Main recipe image",
+                                            is_main=True,
+                                            is_step=False,
                                         )
                                     ]
 
@@ -1615,10 +1876,15 @@ class StreamlitRecipeApp:
                     progress_bar.progress(1.0)
 
                 else:
-                    # Process each image as a separate recipe
-                    for i, uploaded_file in enumerate(uploaded_files):
+                    # Process each image as a separate recipe (excluding deleted)
+                    active_files = [
+                        (i, uploaded_file)
+                        for i, uploaded_file in enumerate(uploaded_files)
+                        if i not in st.session_state.deleted_files
+                    ]
+                    for counter, (i, uploaded_file) in enumerate(active_files):
                         status_text.text(f"Processing {uploaded_file.name}...")
-                        progress_bar.progress((i + 1) / len(uploaded_files))
+                        progress_bar.progress((counter + 1) / len(active_files))
 
                         try:
                             # Save uploaded file temporarily
@@ -1646,11 +1912,27 @@ class StreamlitRecipeApp:
                                 )
 
                                 # Extract recipe images
-                                if manual_crop:
-                                    # Use pre-cropped images from the manual cropping step
-                                    extracted_images = []
+                                has_crops = False
+                                if manual_crop and st.session_state.get(
+                                    "crop_step_completed", False
+                                ):
+                                    # Check if cropping was actually done or skipped
+                                    image_key = f"multi_img_{i}"
+                                    has_crops = (
+                                        image_key in st.session_state.crop_regions
+                                        and st.session_state.crop_regions[image_key]
+                                    )
 
-                                    # Save original image to /images/originals
+                                    if has_crops:
+                                        # Use pre-cropped images from the manual cropping step
+                                        extracted_images = []
+
+                                        # Save original image to /images/originals
+                                    else:
+                                        # Cropping was skipped - use automatic extraction
+                                        manual_crop = False
+
+                                if has_crops:
                                     originals_dir = os.path.join(
                                         recipe_dir, "images", "originals"
                                     )

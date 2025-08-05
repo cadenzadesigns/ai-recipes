@@ -191,6 +191,21 @@ def show_recipe_viewer():
                                 ing_parts.append(ingredient["amount"]["quantity"])
                             if ingredient["amount"].get("unit"):
                                 ing_parts.append(ingredient["amount"]["unit"])
+                            # Also check for metric measurements
+                            if ingredient["amount"].get("metric_quantity"):
+                                if not ingredient["amount"].get(
+                                    "quantity"
+                                ):  # Only add if no standard measurement
+                                    ing_parts.append(
+                                        ingredient["amount"]["metric_quantity"]
+                                    )
+                            if ingredient["amount"].get("metric_unit"):
+                                if not ingredient["amount"].get(
+                                    "unit"
+                                ):  # Only add if no standard unit
+                                    ing_parts.append(
+                                        ingredient["amount"]["metric_unit"]
+                                    )
 
                         if ingredient.get("item"):
                             item_str = ingredient["item"]["name"]
@@ -212,6 +227,19 @@ def show_recipe_viewer():
                             ing_parts.append(ingredient["amount"]["quantity"])
                         if ingredient["amount"].get("unit"):
                             ing_parts.append(ingredient["amount"]["unit"])
+                        # Also check for metric measurements
+                        if ingredient["amount"].get("metric_quantity"):
+                            if not ingredient["amount"].get(
+                                "quantity"
+                            ):  # Only add if no standard measurement
+                                ing_parts.append(
+                                    ingredient["amount"]["metric_quantity"]
+                                )
+                        if ingredient["amount"].get("metric_unit"):
+                            if not ingredient["amount"].get(
+                                "unit"
+                            ):  # Only add if no standard unit
+                                ing_parts.append(ingredient["amount"]["metric_unit"])
 
                     if ingredient.get("item"):
                         item_str = ingredient["item"]["name"]
@@ -221,21 +249,21 @@ def show_recipe_viewer():
                             )
                         ing_parts.append(item_str)
 
-                    st.markdown(f"• {' '.join(ing_parts)}")
+                    st.markdown(f"{' '.join(ing_parts)}")
 
     with col_right:
         # Directions section
         st.markdown("### Directions")
 
-        for i, direction in enumerate(recipe_data.get("directions", []), 1):
-            st.markdown(f"**Step {i}.** {direction}")
+        for direction in recipe_data.get("directions", []):
+            st.markdown(f"{direction}")
 
     # Notes section
     if recipe_data.get("notes"):
         st.markdown("### Recipe Notes")
         with st.container():
             for note in recipe_data["notes"]:
-                st.markdown(f"• {note}")
+                st.markdown(f"{note}")
 
     # Step-by-step images
     if recipe_data.get("images"):
