@@ -428,7 +428,7 @@ class StreamlitRecipeApp:
                     num_groups_input = st.number_input(
                         "Number of recipe groups",
                         min_value=1,
-                        max_value=min(len(uploaded_files), 10),
+                        max_value=min(len(uploaded_files), 30),
                         value=st.session_state.get("num_groups", 1),
                         help="How many different recipes do you want to create?",
                     )
@@ -480,6 +480,26 @@ class StreamlitRecipeApp:
                 "#FFD93D",  # Yellow
                 "#C7CEEA",  # Lavender
                 "#FFAAA5",  # Pink
+                "#2E8B57",  # Sea green
+                "#FF1493",  # Deep pink
+                "#00CED1",  # Dark turquoise
+                "#FF8C00",  # Dark orange
+                "#9370DB",  # Medium purple
+                "#20B2AA",  # Light sea green
+                "#FF69B4",  # Hot pink
+                "#48D1CC",  # Medium turquoise
+                "#FF4500",  # Orange red
+                "#6A5ACD",  # Slate blue
+                "#3CB371",  # Medium sea green
+                "#DB7093",  # Pale violet red
+                "#00BFFF",  # Deep sky blue
+                "#FF6347",  # Tomato
+                "#8A2BE2",  # Blue violet
+                "#5F9EA0",  # Cadet blue
+                "#D2691E",  # Chocolate
+                "#6495ED",  # Cornflower blue
+                "#DC143C",  # Crimson
+                "#00FA9A",  # Medium spring green
             ]
 
             # Show color legend
